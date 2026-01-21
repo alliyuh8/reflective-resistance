@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>ChatGPT Energy Tracker</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      width: 400px;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+    
+    h1 {
+      font-size: 20px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    
+    .session-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    
+    button {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, opacity 0.2s;
+    }
+    
+    button:hover {
+      transform: translateY(-2px);
+      opacity: 0.9;
+    }
+    
+    button:active {
+      transform: translateY(0);
+    }
+    
+    #startBtn {
+      background: #48bb78;
+      color: white;
+    }
+    
+    #endBtn {
+      background: #f56565;
+      color: white;
+    }
+    
+    #startBtn:disabled, #endBtn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .status {
+      background: rgba(255, 255, 255, 0.2);
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      text-align: center;
+      font-weight: 600;
+    }
+    
+    .status.active {
+      background: rgba(72, 187, 120, 0.3);
+      border: 2px solid #48bb78;
+    }
+    
+    .metrics {
+      background: rgba(0, 0, 0, 0.2);
+      padding: 16px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    
+    .metric-row:last-child {
+      border-bottom: none;
+    }
+    
+    .metric-label {
+      opacity: 0.8;
+      font-size: 13px;
+    }
+    
+    .metric-value {
+      font-weight: 700;
+      font-size: 14px;
+    }
+    
+    .arduino-section {
+      background: rgba(0, 0, 0, 0.2);
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
+    
+    .arduino-section h3 {
+      font-size: 14px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .arduino-info {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+    
+    #downloadArduino {
+      width: 100%;
+      background: #4299e1;
+      color: white;
+      margin-top: 10px;
+    }
+    
+    #exportData {
+      width: 100%;
+      background: #ed8936;
+      color: white;
+      margin-top: 10px;
+    }
+    
+    .info-text {
+      font-size: 11px;
+      opacity: 0.7;
+      text-align: center;
+      margin-top: 15px;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <h1>⚡ ChatGPT Energy Tracker</h1>
+  
+  <div class="session-controls">
+    <button id="startBtn">▶ Start Session</button>
+    <button id="endBtn" disabled>⏹ End Session</button>
+  </div>
+  
+  <div class="status" id="status">
+    Session inactive
+  </div>
+  
+  <div class="metrics">
+    <div class="metric-row">
+      <span class="metric-label">Total Queries</span>
+      <span class="metric-value" id="totalQueries">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Total Tokens</span>
+      <span class="metric-value" id="totalTokens">0</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Time to First Query</span>
+      <span class="metric-value" id="timeToFirst">--</span>
+    </div>
+    <div class="metric-row">
+      <span class="metric-label">Session Duration</span>
+      <span class="metric-value" id="duration">--</span>
+    </div>
+  </div>
+  
+  <div class="arduino-section">
+    <h3>🤖 Arduino Output</h3>
+    <div class="arduino-info">
+      <span>Current Tokens:</span>
+      <strong id="arduinoTokens">0</strong>
+    </div>
+    <div class="arduino-info">
+      <span>PWM Value:</span>
+      <strong id="arduinoPWM">0</strong>
+    </div>
+    <button id="downloadArduino">📥 Download Arduino Script</button>
+  </div>
+  
+  <button id="exportData">📊 Export Session Data (CSV)</button>
+  
+  <div class="info-text">
+    Navigate to chatgpt.com and start a session to begin tracking
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>
