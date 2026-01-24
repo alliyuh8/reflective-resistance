@@ -1,15 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Energy & Token Tracker",
-  "version": "1.0.0",
-  "description": "Track token usage, energy impact, and session metrics for ChatGPT with Arduino integration",
-  "permissions": [
-    "storage",
-    "activeTab"
-  ],
-  "host_permissions": [
-    "https://chatgpt.com/*"
-  ],
+  "name": "Energy Tracker",
+  "version": "1.0",
+  "permissions": ["storage"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["https://chatgpt.com/*"],
@@ -17,9 +13,6 @@
       "css": ["overlay.css"]
     }
   ],
-  "background": {
-    "service_worker": "background.js"
-  },
   "action": {
     "default_popup": "popup.html"
   },
