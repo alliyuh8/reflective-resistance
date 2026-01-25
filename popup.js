@@ -13,6 +13,28 @@ const arduinoTokens = document.getElementById('arduinoTokens');
 const arduinoPWM = document.getElementById('arduinoPWM');
 const downloadArduinoBtn = document.getElementById('downloadArduino');
 const exportDataBtn = document.getElementById('exportData');
+const progressBar = document.getElementById('progressBar');
+const resistancePercent = document.getElementById('resistancePercent');
+const resistanceDesc = document.getElementById('resistanceDesc');
+
+// Resistance levels
+const RESISTANCE_LEVELS = [
+  { threshold: 0, percent: 0, label: "No resistance" },
+  { threshold: 250, percent: 20, label: "Slight resistance (20%)" },
+  { threshold: 450, percent: 50, label: "Medium resistance (50%)" },
+  { threshold: 650, percent: 75, label: "Significant resistance (75%)" },
+  { threshold: 850, percent: 100, label: "Maximum resistance (100%)" }
+];
+
+// Calculate resistance level
+function calculateResistance(tokens) {
+  for (let i = RESISTANCE_LEVELS.length - 1; i >= 0; i--) {
+    if (tokens >= RESISTANCE_LEVELS[i].threshold) {
+      return RESISTANCE_LEVELS[i];
+    }
+  }
+  return RESISTANCE_LEVELS[0];
+}
 
 // Format time duration
 function formatDuration(ms) {
@@ -79,6 +101,12 @@ function updateUI() {
       if (data) {
         totalQueries.textContent = data.queries?.length || 0;
         totalTokens.textContent = (data.totalTokens || 0).toLocaleString();
+        
+        // Update resistance bar
+        const resistance = calculateResistance(data.totalTokens || 0);
+        progressBar.style.width = `${resistance.percent}%`;
+        resistancePercent.textContent = `${resistance.percent}%`;
+        resistanceDesc.textContent = resistance.label;
         
         if (data.firstQueryTime && data.startTime) {
           timeToFirst.textContent = formatDuration(data.firstQueryTime - data.startTime);

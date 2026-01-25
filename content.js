@@ -10,8 +10,22 @@ let sessionData = {
   cumulativeEnergy: 0
 };
 
-// Store the prompt text BEFORE submission
-let capturedPromptText = "";
+// Resistance tracking
+let resistanceLevel = 0; // 0-100%
+let decayInterval = null;
+
+// Resistance levels (based on tokens)
+const RESISTANCE_LEVELS = [
+  { threshold: 0, percent: 0, label: "No resistance" },
+  { threshold: 250, percent: 20, label: "Slight (20%)" },
+  { threshold: 450, percent: 50, label: "Medium (50%)" },
+  { threshold: 650, percent: 75, label: "Significant (75%)" },
+  { threshold: 850, percent: 100, label: "Max (100%)" }
+];
+
+// Decay rate: lose 1% every 10 seconds
+const DECAY_RATE = 0.1; // % per second
+const DECAY_INTERVAL = 1000; // ms
 
 // GPT-5 Energy conversion constants (updated estimates)
 const ENERGY_PER_TOKEN = 0.0004; // Wh per token (estimated for GPT-5, higher than GPT-4)
@@ -86,6 +100,23 @@ function createOverlay() {
       <button id="close-overlay" class="close-btn">×</button>
     </div>
     <div class="energy-content">
+      <div class="resistance-section">
+        <div class="resistance-header">
+          <span class="resistance-label">🎯 Resistance Level</span>
+          <span class="resistance-value" id="resistance-percent">0%</span>
+        </div>
+        <div class="progress-bar-container">
+          <div class="progress-bar-fill" id="progress-fill" style="width: 0%"></div>
+          <div class="progress-bar-markers">
+            <div class="progress-marker" style="left: 0%" data-label="0%"></div>
+            <div class="progress-marker" style="left: 20%" data-label="20%"></div>
+            <div class="progress-marker" style="left: 50%" data-label="50%"></div>
+            <div class="progress-marker" style="left: 75%" data-label="75%"></div>
+            <div class="progress-marker" style="left: 100%" data-label="100%"></div>
+          </div>
+        </div>
+        <div class="resistance-status" id="resistance-status">No resistance</div>
+      </div>
       <div class="energy-stat">
         <span class="stat-value" id="tokens-value">0</span>
         <span class="stat-label">tokens this query</span>
@@ -120,9 +151,58 @@ function createOverlay() {
   document.getElementById('close-overlay').addEventListener('click', () => {
     overlay.style.display = 'none';
   });
+  
+  // Start resistance decay
+  startResistanceDecay();
 }
 
-// Update overlay with new data
+// Calculate resistance level based on tokens
+function calculateResistance(tokens) {
+  for (let i = RESISTANCE_LEVELS.length - 1; i >= 0; i--) {
+    if (tokens >= RESISTANCE_LEVELS[i].threshold) {
+      return RESISTANCE_LEVELS[i];
+    }
+  }
+  return RESISTANCE_LEVELS[0];
+}
+
+// Update resistance display
+function updateResistanceBar() {
+  const percentElem = document.getElementById('resistance-percent');
+  const fillElem = document.getElementById('progress-fill');
+  const statusElem = document.getElementById('resistance-status');
+  
+  if (!percentElem || !fillElem || !statusElem) return;
+  
+  const level = calculateResistance(sessionData.totalTokens);
+  
+  // Update to new level or keep decaying current level
+  resistanceLevel = Math.max(level.percent, resistanceLevel);
+  
+  percentElem.textContent = `${Math.round(resistanceLevel)}%`;
+  fillElem.style.width = `${resistanceLevel}%`;
+  statusElem.textContent = level.label;
+}
+
+// Start resistance decay timer
+function startResistanceDecay() {
+  if (decayInterval) clearInterval(decayInterval);
+  
+  decayInterval = setInterval(() => {
+    if (resistanceLevel > 0) {
+      resistanceLevel = Math.max(0, resistanceLevel - DECAY_RATE);
+      updateResistanceBar();
+    }
+  }, DECAY_INTERVAL);
+}
+
+// Stop resistance decay
+function stopResistanceDecay() {
+  if (decayInterval) {
+    clearInterval(decayInterval);
+    decayInterval = null;
+  }
+}
 function updateOverlay(metrics, cumulative = false, engineName = 'gpt-5') {
   const overlay = document.getElementById('energy-overlay');
   if (!overlay) return;
@@ -517,6 +597,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
     } 
     else if (message.type === 'END_SESSION') {
       sessionActive = false;
+      stopResistanceDecay();
       const completionTime = Date.now() - sessionData.startTime;
       const finalData = {
         ...sessionData,
