@@ -1,5 +1,5 @@
 // background.js - Combined service worker for session management + Arduino
-console.log("🟢 Background service worker loaded");
+console.log("🟢 Background service worker loaded - VERSION 2.0");
 
 const ARDUINO_SERVER_URL = "http://localhost:3000/update";
 

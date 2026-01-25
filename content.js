@@ -1,4 +1,4 @@
-console.log("🔥 ChatGPT Energy Tracker Extension loaded (GPT-5 optimized)");
+console.log("🔥 ChatGPT Energy Tracker Extension loaded (GPT-5 optimized) - VERSION 2.0");
 
 // Session tracking state
 let sessionActive = false;
@@ -13,19 +13,15 @@ let sessionData = {
 // Resistance tracking
 let resistanceLevel = 0; // 0-100%
 let decayInterval = null;
+let lastDecayTime = null;
 
-// Resistance levels (based on tokens)
-const RESISTANCE_LEVELS = [
-  { threshold: 0, percent: 0, label: "No resistance" },
-  { threshold: 250, percent: 20, label: "Slight (20%)" },
-  { threshold: 450, percent: 50, label: "Medium (50%)" },
-  { threshold: 650, percent: 75, label: "Significant (75%)" },
-  { threshold: 850, percent: 100, label: "Max (100%)" }
-];
+// Resistance calculation: simple percentage based on tokens
+// 100 tokens = 10%, 500 tokens = 50%, 1000 tokens = 100%
+const TOKENS_FOR_MAX_RESISTANCE = 1000;
 
-// Decay rate: lose 1% every 10 seconds
-const DECAY_RATE = 0.1; // % per second
-const DECAY_INTERVAL = 1000; // ms
+// Decay rate: lose 1% every 15 seconds
+const DECAY_RATE = 1; // % per interval
+const DECAY_INTERVAL = 15000; // 15 seconds in ms
 
 // GPT-5 Energy conversion constants (updated estimates)
 const ENERGY_PER_TOKEN = 0.0004; // Wh per token (estimated for GPT-5, higher than GPT-4)
@@ -45,6 +41,9 @@ const enginesCreditsMapping = {
 const freeEngines = ['gpt-3.5-turbo-free'];
 const maxTokenSize = 128000; // GPT-5 context window (estimated)
 const pageLoadWaitIntervals = 1000;
+
+// Variable to store captured prompt text
+let capturedPromptText = "";
 
 function getPromptText() {
   const textarea = document.querySelector("textarea");
@@ -89,7 +88,12 @@ function calculateEnergyMetrics(tokens) {
 
 // Create overlay UI
 function createOverlay() {
-  if (document.getElementById('energy-overlay')) return;
+  if (document.getElementById('energy-overlay')) {
+    console.log("⚠️ Overlay already exists");
+    return;
+  }
+  
+  console.log("🎨 Creating overlay...");
   
   const overlay = document.createElement('div');
   overlay.id = 'energy-overlay';
@@ -146,52 +150,99 @@ function createOverlay() {
   `;
   
   document.body.appendChild(overlay);
+  console.log("✅ Overlay created and appended to body");
+  
+  // Verify elements exist
+  const checkElems = {
+    'resistance-percent': document.getElementById('resistance-percent'),
+    'progress-fill': document.getElementById('progress-fill'),
+    'resistance-status': document.getElementById('resistance-status')
+  };
+  
+  console.log("🔍 Resistance elements check:", checkElems);
   
   // Close button
   document.getElementById('close-overlay').addEventListener('click', () => {
     overlay.style.display = 'none';
   });
   
-  // Start resistance decay
-  startResistanceDecay();
+  // Don't start resistance decay here - it starts after first query
 }
 
-// Calculate resistance level based on tokens
-function calculateResistance(tokens) {
-  for (let i = RESISTANCE_LEVELS.length - 1; i >= 0; i--) {
-    if (tokens >= RESISTANCE_LEVELS[i].threshold) {
-      return RESISTANCE_LEVELS[i];
-    }
-  }
-  return RESISTANCE_LEVELS[0];
+// Calculate resistance increase based on tokens
+function calculateResistanceIncrease(tokens) {
+  return (tokens / TOKENS_FOR_MAX_RESISTANCE) * 100;
+}
+
+// Get resistance label based on percentage
+function getResistanceLabel(percent) {
+  if (percent >= 75) return "Maximum resistance";
+  if (percent >= 50) return "Significant resistance";
+  if (percent >= 20) return "Medium resistance";
+  if (percent >= 10) return "Slight resistance";
+  return "No resistance";
 }
 
 // Update resistance display
 function updateResistanceBar() {
+  console.log("🔍 updateResistanceBar called");
+  
   const percentElem = document.getElementById('resistance-percent');
   const fillElem = document.getElementById('progress-fill');
   const statusElem = document.getElementById('resistance-status');
   
-  if (!percentElem || !fillElem || !statusElem) return;
+  if (!percentElem || !fillElem || !statusElem) {
+    console.error("❌ Resistance bar elements not found!");
+    return;
+  }
   
-  const level = calculateResistance(sessionData.totalTokens);
+  const roundedLevel = Math.round(resistanceLevel);
+  const label = getResistanceLabel(resistanceLevel);
   
-  // Update to new level or keep decaying current level
-  resistanceLevel = Math.max(level.percent, resistanceLevel);
+  console.log(`🎯 Resistance: ${roundedLevel}% - "${label}"`);
   
-  percentElem.textContent = `${Math.round(resistanceLevel)}%`;
+  percentElem.textContent = `${roundedLevel}%`;
   fillElem.style.width = `${resistanceLevel}%`;
-  statusElem.textContent = level.label;
+  statusElem.textContent = label;
+  
+  console.log(`✅ Updated resistance bar`);
+}
+
+// Add resistance when new tokens are counted
+function addResistance(tokens) {
+  const increase = calculateResistanceIncrease(tokens);
+  const oldLevel = resistanceLevel;
+  
+  resistanceLevel = Math.min(100, resistanceLevel + increase);
+  
+  console.log(`📈 Resistance increased: ${Math.round(oldLevel)}% → ${Math.round(resistanceLevel)}% (+${tokens} tokens)`);
+  
+  updateResistanceBar();
+  
+  if (sessionActive && !lastDecayTime) {
+    lastDecayTime = Date.now();
+  }
 }
 
 // Start resistance decay timer
 function startResistanceDecay() {
   if (decayInterval) clearInterval(decayInterval);
   
+  console.log(`⏱️ Starting resistance decay (${DECAY_RATE}% every ${DECAY_INTERVAL / 1000} seconds)`);
+  
+  lastDecayTime = Date.now();
+  
   decayInterval = setInterval(() => {
+    if (!sessionActive) return;
+    
     if (resistanceLevel > 0) {
+      const oldLevel = resistanceLevel;
       resistanceLevel = Math.max(0, resistanceLevel - DECAY_RATE);
+      
+      console.log(`📉 Resistance decayed: ${Math.round(oldLevel)}% → ${Math.round(resistanceLevel)}%`);
+      
       updateResistanceBar();
+      lastDecayTime = Date.now();
     }
   }, DECAY_INTERVAL);
 }
@@ -201,8 +252,11 @@ function stopResistanceDecay() {
   if (decayInterval) {
     clearInterval(decayInterval);
     decayInterval = null;
+    lastDecayTime = null;
+    console.log("⏹️ Resistance decay stopped");
   }
 }
+
 function updateOverlay(metrics, cumulative = false, engineName = 'gpt-5') {
   const overlay = document.getElementById('energy-overlay');
   if (!overlay) return;
@@ -268,14 +322,24 @@ function trackQuery(promptText, responseText = "", engineName = 'gpt-5') {
   if (!sessionData.firstQueryTime) {
     sessionData.firstQueryTime = Date.now();
     queryData.timeToFirstQuery = sessionData.firstQueryTime - sessionData.startTime;
+    
+    // Start decay after first query
+    startResistanceDecay();
   }
   
   sessionData.queries.push(queryData);
   sessionData.totalTokens += promptTokens; // Only add prompt tokens initially
   
+  // ADD RESISTANCE based on prompt tokens
+  addResistance(promptTokens);
+  
+  console.log(`📊 Total tokens now: ${sessionData.totalTokens}`);
+  
   // Update UI (only showing prompt tokens for now)
   const metrics = calculateEnergyMetrics(promptTokens);
+  console.log(`🎨 About to call updateOverlay with metrics:`, metrics);
   updateOverlay(metrics, true, engineName);
+  console.log(`✅ updateOverlay completed`);
   
   // Send to Arduino
   sendToArduino(promptTokens);
@@ -419,6 +483,9 @@ function observeResponse(engineName = 'gpt-5') {
           lastQuery.responseTokens = responseTokens;
           lastQuery.tokens = lastQuery.promptTokens + responseTokens;
           sessionData.totalTokens += responseTokens; // Add response tokens to total
+          
+          // ADD RESISTANCE for response tokens
+          addResistance(responseTokens);
           
           const metrics = calculateEnergyMetrics(lastQuery.tokens);
           updateOverlay(metrics, true, engineName);
@@ -582,7 +649,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
     console.log('📨 Message received:', message.type);
     
     if (message.type === 'START_SESSION') {
+      console.log("🟢 Starting session...");
       sessionActive = true;
+      resistanceLevel = 0; // Reset resistance
+      lastDecayTime = null; // Reset decay timer
+      
       sessionData = {
         startTime: Date.now(),
         firstQueryTime: null,
@@ -590,8 +661,12 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
         totalTokens: 0,
         cumulativeEnergy: 0
       };
+      
+      console.log("🎨 About to create overlay...");
       createOverlay();
-      console.log("✅ Session started");
+      console.log("✅ Overlay creation complete");
+      // Don't start decay here - it starts after first query
+      
       sendResponse({ success: true });
       return true;
     } 

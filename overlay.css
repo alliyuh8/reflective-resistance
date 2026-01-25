@@ -29,10 +29,11 @@
 }
 
 .energy-overlay.flash {
-  animation: flash 0.5s ease-out;
+  /* Removed flash animation - too distracting */
 }
 
 @keyframes flash {
+  /* Keeping definition but not using it */
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.05); }
 }
@@ -121,9 +122,10 @@
   height: 100%;
   background: linear-gradient(90deg, #48bb78 0%, #f6ad55 50%, #f56565 100%);
   border-radius: 12px;
-  transition: width 0.3s ease-out;
+  transition: width 0.5s ease-out;
   position: relative;
-  box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 10px rgba(72, 187, 120, 0.5);
+  min-width: 2px; /* Ensure visibility even at low percentages */
 }
 
 .progress-bar-markers {

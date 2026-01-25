@@ -17,23 +17,20 @@ const progressBar = document.getElementById('progressBar');
 const resistancePercent = document.getElementById('resistancePercent');
 const resistanceDesc = document.getElementById('resistanceDesc');
 
-// Resistance levels
-const RESISTANCE_LEVELS = [
-  { threshold: 0, percent: 0, label: "No resistance" },
-  { threshold: 250, percent: 20, label: "Slight resistance (20%)" },
-  { threshold: 450, percent: 50, label: "Medium resistance (50%)" },
-  { threshold: 650, percent: 75, label: "Significant resistance (75%)" },
-  { threshold: 850, percent: 100, label: "Maximum resistance (100%)" }
-];
+// Resistance calculation
+const TOKENS_FOR_MAX_RESISTANCE = 1000;
 
 // Calculate resistance level
 function calculateResistance(tokens) {
-  for (let i = RESISTANCE_LEVELS.length - 1; i >= 0; i--) {
-    if (tokens >= RESISTANCE_LEVELS[i].threshold) {
-      return RESISTANCE_LEVELS[i];
-    }
-  }
-  return RESISTANCE_LEVELS[0];
+  const percent = Math.min(100, (tokens / TOKENS_FOR_MAX_RESISTANCE) * 100);
+  
+  let label = "No resistance";
+  if (percent >= 75) label = "Maximum resistance";
+  else if (percent >= 50) label = "Significant resistance";
+  else if (percent >= 20) label = "Medium resistance";
+  else if (percent >= 10) label = "Slight resistance";
+  
+  return { percent, label };
 }
 
 // Format time duration
@@ -105,7 +102,7 @@ function updateUI() {
         // Update resistance bar
         const resistance = calculateResistance(data.totalTokens || 0);
         progressBar.style.width = `${resistance.percent}%`;
-        resistancePercent.textContent = `${resistance.percent}%`;
+        resistancePercent.textContent = `${Math.round(resistance.percent)}%`;
         resistanceDesc.textContent = resistance.label;
         
         if (data.firstQueryTime && data.startTime) {
