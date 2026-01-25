@@ -1,25 +1,29 @@
 {
   "manifest_version": 3,
-  "name": "Energy Tracker",
-  "version": "1.0",
-  "permissions": ["storage"],
+  "name": "ChatGPT Energy Tracker with Arduino",
+  "version": "1.0.0",
+  "description": "Track ChatGPT token usage with Arduino physical feedback",
+  "permissions": [
+    "storage",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["https://chatgpt.com/*"],
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*"
+      ],
       "js": ["content.js"],
       "css": ["overlay.css"]
     }
   ],
   "action": {
     "default_popup": "popup.html"
-  },
-  "web_accessible_resources": [
-    {
-      "resources": ["overlay.css"],
-      "matches": ["https://chatgpt.com/*"]
-    }
-  ]
+  }
 }
