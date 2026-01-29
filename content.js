@@ -10,6 +10,9 @@ let sessionData = {
   cumulativeEnergy: 0
 };
 
+// Track which responses we've already counted
+let countedResponseIds = new Set();
+
 // Resistance tracking
 let resistanceLevel = 0; // 0-100%
 let decayInterval = null;
@@ -209,6 +212,7 @@ function updateResistanceBar() {
 }
 
 // Add resistance when new tokens are counted
+// Replace the addResistance function in content.js
 function addResistance(tokens) {
   const increase = calculateResistanceIncrease(tokens);
   const oldLevel = resistanceLevel;
@@ -219,12 +223,15 @@ function addResistance(tokens) {
   
   updateResistanceBar();
   
+  // Send resistance to Arduino
+  sendResistanceToArduino(resistanceLevel, tokens);
+  
   if (sessionActive && !lastDecayTime) {
     lastDecayTime = Date.now();
   }
 }
 
-// Start resistance decay timer
+// Replace the startResistanceDecay function in content.js
 function startResistanceDecay() {
   if (decayInterval) clearInterval(decayInterval);
   
@@ -242,9 +249,30 @@ function startResistanceDecay() {
       console.log(`📉 Resistance decayed: ${Math.round(oldLevel)}% → ${Math.round(resistanceLevel)}%`);
       
       updateResistanceBar();
+      
+      // Send updated resistance to Arduino
+      sendResistanceToArduino(resistanceLevel, sessionData.totalTokens);
+      
       lastDecayTime = Date.now();
     }
   }, DECAY_INTERVAL);
+}
+
+// Add this NEW function to content.js (add it anywhere before the message listener)
+function sendResistanceToArduino(resistance, tokens) {
+  if (typeof chrome !== 'undefined' && chrome.runtime) {
+    chrome.runtime.sendMessage({
+      type: 'ARDUINO_UPDATE',
+      resistance: Math.round(resistance),
+      tokens: tokens
+    }, response => {
+      if (chrome.runtime.lastError) {
+        console.warn('⚠️ Arduino communication error:', chrome.runtime.lastError.message);
+      } else if (response && response.success) {
+        console.log('✅ Arduino updated successfully');
+      }
+    });
+  }
 }
 
 // Stop resistance decay
@@ -395,6 +423,20 @@ function handleSubmit(source) {
     return;
   }
   
+  // Prevent rapid-fire submissions
+  const now = Date.now();
+  if (sessionData.queries.length > 0) {
+    const lastQuery = sessionData.queries[sessionData.queries.length - 1];
+    const timeSinceLastQuery = now - lastQuery.timestamp;
+    
+    // If less than 2 seconds since last query, ignore
+    if (timeSinceLastQuery < 2000) {
+      console.log("⚠️ Ignoring rapid submission (less than 2s since last query)");
+      promptSent = false;
+      return;
+    }
+  }
+  
   const engineName = getCurrentEngine();
   trackQuery(promptText, "", engineName);
 
@@ -407,6 +449,7 @@ function handleSubmit(source) {
     promptSent = false;
   }, 2000);
 }
+
 
 // Attach listeners
 function attachListener() {
@@ -466,45 +509,130 @@ function attachListener() {
 function observeResponse(engineName = 'gpt-5') {
   const targetNode = document.querySelector('main') || document.body;
   
+  let lastResponseLength = 0;
+  let responseComplete = false;
+  let stableCheckTimeout = null;
+  let stabilityCounter = 0; // Count how many times length stayed the same
+  const REQUIRED_STABLE_CHECKS = 3; // Need 3 consecutive stable checks
+  
   const observer = new MutationObserver((mutations) => {
     const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
-    if (messages.length > 0) {
+    
+    if (messages.length > 0 && sessionData.queries.length > 0) {
       const latestMessage = messages[messages.length - 1];
       const responseText = latestMessage.textContent || "";
+      const currentLength = responseText.length;
       
-      if (sessionData.queries.length > 0) {
-        const lastQuery = sessionData.queries[sessionData.queries.length - 1];
-        const responseTokens = estimateTokens(responseText);
+      const lastQuery = sessionData.queries[sessionData.queries.length - 1];
+      
+      // Generate unique ID for this response
+      const responseId = `${lastQuery.timestamp}-${sessionData.queries.length - 1}`;
+      
+      // Skip if we've already fully counted this response
+      if (countedResponseIds.has(responseId)) {
+        observer.disconnect();
+        return;
+      }
+      
+      // Only process if response has content and hasn't been counted yet
+      if (currentLength > 0 && lastQuery.responseTokens === 0) {
         
-        // Only update if we haven't counted the response yet
-        if (lastQuery.responseTokens === 0 && responseTokens > 0) {
-          console.log(`📥 Response received: ${responseTokens} tokens`);
+        // Check if response length is stable (stopped growing)
+        if (currentLength === lastResponseLength) {
+          stabilityCounter++;
+          console.log(`🔍 Response stable ${stabilityCounter}/${REQUIRED_STABLE_CHECKS} (${currentLength} chars)`);
+        } else {
+          // Length changed - reset counter
+          stabilityCounter = 0;
+        }
+        
+        // Clear previous timeout
+        if (stableCheckTimeout) {
+          clearTimeout(stableCheckTimeout);
+        }
+        
+        // Only count after multiple stable checks
+        if (stabilityCounter >= REQUIRED_STABLE_CHECKS && !responseComplete) {
+          stableCheckTimeout = setTimeout(() => {
+            if (!responseComplete && currentLength === lastResponseLength) {
+              // Response is definitely complete - count final tokens
+              const responseTokens = estimateTokens(responseText);
+              
+              console.log(`📥 Response FINAL: ${responseTokens} tokens (${currentLength} chars)`);
+              
+              lastQuery.responseTokens = responseTokens;
+              lastQuery.tokens = lastQuery.promptTokens + responseTokens;
+              sessionData.totalTokens += responseTokens;
+              
+              // Mark this response as counted
+              countedResponseIds.add(responseId);
+              responseComplete = true;
+              
+              // ADD RESISTANCE for response tokens
+              addResistance(responseTokens);
+              
+              const metrics = calculateEnergyMetrics(lastQuery.tokens);
+              updateOverlay(metrics, true, engineName);
+              
+              if (typeof chrome !== 'undefined' && chrome.storage) {
+                chrome.storage.local.set({ sessionData });
+              }
+              
+              // Disconnect observer after counting
+              observer.disconnect();
+            }
+          }, 2000); // Wait 2 seconds after stability confirmed
+        }
+        
+        lastResponseLength = currentLength;
+      }
+    }
+  });
+
+  observer.observe(targetNode, {
+    childList: true,
+    subtree: true,
+    characterData: true
+  });
+  
+  // Safety timeout - disconnect after 90 seconds
+  setTimeout(() => {
+    observer.disconnect();
+    
+    // If response was never counted, count it now
+    if (sessionData.queries.length > 0) {
+      const lastQuery = sessionData.queries[sessionData.queries.length - 1];
+      const responseId = `${lastQuery.timestamp}-${sessionData.queries.length - 1}`;
+      
+      if (!countedResponseIds.has(responseId) && lastQuery.responseTokens === 0) {
+        const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
+        if (messages.length > 0) {
+          const latestMessage = messages[messages.length - 1];
+          const responseText = latestMessage.textContent || "";
+          const responseTokens = estimateTokens(responseText);
           
-          lastQuery.responseTokens = responseTokens;
-          lastQuery.tokens = lastQuery.promptTokens + responseTokens;
-          sessionData.totalTokens += responseTokens; // Add response tokens to total
-          
-          // ADD RESISTANCE for response tokens
-          addResistance(responseTokens);
-          
-          const metrics = calculateEnergyMetrics(lastQuery.tokens);
-          updateOverlay(metrics, true, engineName);
-          sendToArduino(lastQuery.tokens);
-          
-          if (typeof chrome !== 'undefined' && chrome.storage) {
-            chrome.storage.local.set({ sessionData });
+          if (responseTokens > 0) {
+            console.log(`⏱️ Safety timeout: Counting response ${responseTokens} tokens`);
+            
+            lastQuery.responseTokens = responseTokens;
+            lastQuery.tokens = lastQuery.promptTokens + responseTokens;
+            sessionData.totalTokens += responseTokens;
+            
+            countedResponseIds.add(responseId);
+            
+            addResistance(responseTokens);
+            
+            const metrics = calculateEnergyMetrics(lastQuery.tokens);
+            updateOverlay(metrics, true, engineName);
+            
+            if (typeof chrome !== 'undefined' && chrome.storage) {
+              chrome.storage.local.set({ sessionData });
+            }
           }
         }
       }
     }
-  });
-  
-  observer.observe(targetNode, {
-    childList: true,
-    subtree: true
-  });
-  
-  setTimeout(() => observer.disconnect(), 30000);
+  }, 90000); // 90 second timeout
 }
 
 // Token counter integration (from original code)
@@ -651,8 +779,9 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
     if (message.type === 'START_SESSION') {
       console.log("🟢 Starting session...");
       sessionActive = true;
-      resistanceLevel = 0; // Reset resistance
-      lastDecayTime = null; // Reset decay timer
+      resistanceLevel = 0;
+      lastDecayTime = null;
+      countedResponseIds.clear(); // Clear previous response tracking
       
       sessionData = {
         startTime: Date.now(),
@@ -665,14 +794,23 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
       console.log("🎨 About to create overlay...");
       createOverlay();
       console.log("✅ Overlay creation complete");
-      // Don't start decay here - it starts after first query
       
       sendResponse({ success: true });
       return true;
-    } 
+    }
     else if (message.type === 'END_SESSION') {
       sessionActive = false;
       stopResistanceDecay();
+      
+      // Stop the motor by sending 0% resistance
+      resistanceLevel = 0;
+      updateResistanceBar();
+      sendResistanceToArduino(0, 0);
+      console.log("🛑 Motor stopped - session ended");
+      
+      // Clear counted responses
+      countedResponseIds.clear();
+      
       const completionTime = Date.now() - sessionData.startTime;
       const finalData = {
         ...sessionData,
