@@ -12,6 +12,7 @@ let sessionData = {
 
 // Track which responses we've already counted
 let countedResponseIds = new Set();
+let activeQueryTokens = 0;
 
 // Resistance tracking
 let resistanceLevel = 0; // 0-100%
@@ -22,9 +23,10 @@ let lastDecayTime = null;
 // 100 tokens = 10%, 500 tokens = 50%, 1000 tokens = 100%
 const TOKENS_FOR_MAX_RESISTANCE = 1000;
 
-// Decay rate: lose 1% every 15 seconds
+// Decay rate: lose 1% every 15 seconds (but check more frequently)
 const DECAY_RATE = 1; // % per interval
 const DECAY_INTERVAL = 15000; // 15 seconds in ms
+const DECAY_UPDATE_INTERVAL = 1000; // Send updates every 1 second
 
 // GPT-5 Energy conversion constants (updated estimates)
 const ENERGY_PER_TOKEN = 0.0004; // Wh per token (estimated for GPT-5, higher than GPT-4)
@@ -34,7 +36,7 @@ const LED_HOUR = 10; // Wh
 
 // GPT-5 pricing mapping (credits per 1K tokens)
 const enginesCreditsMapping = {
-  'gpt-5': 0.15, // Example pricing - adjust based on actual GPT-5 pricing
+  'gpt-5': 0.15,
   'gpt-5-turbo': 0.10,
   'gpt-4': 0.06,
   'gpt-4-turbo': 0.03,
@@ -42,7 +44,7 @@ const enginesCreditsMapping = {
 };
 
 const freeEngines = ['gpt-3.5-turbo-free'];
-const maxTokenSize = 128000; // GPT-5 context window (estimated)
+const maxTokenSize = 128000;
 const pageLoadWaitIntervals = 1000;
 
 // Variable to store captured prompt text
@@ -55,21 +57,18 @@ function getPromptText() {
   const editable = document.querySelector('[contenteditable="true"]');
   if (editable && editable.textContent.trim()) return editable.textContent.trim();
 
-  // Alternative selectors for ChatGPT interface
   const promptArea = document.querySelector('div[data-contents=true]');
   if (promptArea && promptArea.textContent.trim()) return promptArea.textContent.trim();
 
   return "";
 }
 
-// Simple token estimation: 1 token = ~4 characters (100 tokens ~= 75 words)
 function estimateTokens(text) {
   if (!text || typeof text !== "string") return 0;
   
   const trimmed = text.trim();
   if (trimmed.length === 0) return 0;
 
-  // Rule of thumb: 1 token = 4 characters
   const tokens = Math.ceil(trimmed.length / 4);
   
   console.log(`Token estimation - Chars: ${trimmed.length}, Tokens: ${tokens}`);
@@ -77,7 +76,6 @@ function estimateTokens(text) {
   return tokens;
 }
 
-// Calculate energy metrics
 function calculateEnergyMetrics(tokens) {
   const energyWh = tokens * ENERGY_PER_TOKEN;
   return {
@@ -89,7 +87,6 @@ function calculateEnergyMetrics(tokens) {
   };
 }
 
-// Create overlay UI
 function createOverlay() {
   if (document.getElementById('energy-overlay')) {
     console.log("⚠️ Overlay already exists");
@@ -155,7 +152,6 @@ function createOverlay() {
   document.body.appendChild(overlay);
   console.log("✅ Overlay created and appended to body");
   
-  // Verify elements exist
   const checkElems = {
     'resistance-percent': document.getElementById('resistance-percent'),
     'progress-fill': document.getElementById('progress-fill'),
@@ -164,20 +160,15 @@ function createOverlay() {
   
   console.log("🔍 Resistance elements check:", checkElems);
   
-  // Close button
   document.getElementById('close-overlay').addEventListener('click', () => {
     overlay.style.display = 'none';
   });
-  
-  // Don't start resistance decay here - it starts after first query
 }
 
-// Calculate resistance increase based on tokens
 function calculateResistanceIncrease(tokens) {
   return (tokens / TOKENS_FOR_MAX_RESISTANCE) * 100;
 }
 
-// Get resistance label based on percentage
 function getResistanceLabel(percent) {
   if (percent >= 75) return "Maximum resistance";
   if (percent >= 50) return "Significant resistance";
@@ -186,10 +177,7 @@ function getResistanceLabel(percent) {
   return "No resistance";
 }
 
-// Update resistance display
 function updateResistanceBar() {
-  console.log("🔍 updateResistanceBar called");
-  
   const percentElem = document.getElementById('resistance-percent');
   const fillElem = document.getElementById('progress-fill');
   const statusElem = document.getElementById('resistance-status');
@@ -202,17 +190,11 @@ function updateResistanceBar() {
   const roundedLevel = Math.round(resistanceLevel);
   const label = getResistanceLabel(resistanceLevel);
   
-  console.log(`🎯 Resistance: ${roundedLevel}% - "${label}"`);
-  
   percentElem.textContent = `${roundedLevel}%`;
   fillElem.style.width = `${resistanceLevel}%`;
   statusElem.textContent = label;
-  
-  console.log(`✅ Updated resistance bar`);
 }
 
-// Add resistance when new tokens are counted
-// Replace the addResistance function in content.js
 function addResistance(tokens) {
   const increase = calculateResistanceIncrease(tokens);
   const oldLevel = resistanceLevel;
@@ -222,8 +204,6 @@ function addResistance(tokens) {
   console.log(`📈 Resistance increased: ${Math.round(oldLevel)}% → ${Math.round(resistanceLevel)}% (+${tokens} tokens)`);
   
   updateResistanceBar();
-  
-  // Send resistance to Arduino
   sendResistanceToArduino(resistanceLevel, tokens);
   
   if (sessionActive && !lastDecayTime) {
@@ -231,34 +211,37 @@ function addResistance(tokens) {
   }
 }
 
-// Replace the startResistanceDecay function in content.js
 function startResistanceDecay() {
   if (decayInterval) clearInterval(decayInterval);
   
   console.log(`⏱️ Starting resistance decay (${DECAY_RATE}% every ${DECAY_INTERVAL / 1000} seconds)`);
   
   lastDecayTime = Date.now();
+  let decayCounter = 0;
   
   decayInterval = setInterval(() => {
     if (!sessionActive) return;
     
-    if (resistanceLevel > 0) {
+    decayCounter += DECAY_UPDATE_INTERVAL;
+    
+    if (decayCounter >= DECAY_INTERVAL && resistanceLevel > 0) {
       const oldLevel = resistanceLevel;
       resistanceLevel = Math.max(0, resistanceLevel - DECAY_RATE);
       
       console.log(`📉 Resistance decayed: ${Math.round(oldLevel)}% → ${Math.round(resistanceLevel)}%`);
       
-      updateResistanceBar();
-      
-      // Send updated resistance to Arduino
-      sendResistanceToArduino(resistanceLevel, sessionData.totalTokens);
-      
+      decayCounter = 0;
       lastDecayTime = Date.now();
     }
-  }, DECAY_INTERVAL);
+    
+    if (resistanceLevel >= 0) {
+      updateResistanceBar();
+      sendResistanceToArduino(resistanceLevel, sessionData.totalTokens);
+    }
+    
+  }, DECAY_UPDATE_INTERVAL);
 }
 
-// Add this NEW function to content.js (add it anywhere before the message listener)
 function sendResistanceToArduino(resistance, tokens) {
   if (typeof chrome !== 'undefined' && chrome.runtime) {
     chrome.runtime.sendMessage({
@@ -268,14 +251,11 @@ function sendResistanceToArduino(resistance, tokens) {
     }, response => {
       if (chrome.runtime.lastError) {
         console.warn('⚠️ Arduino communication error:', chrome.runtime.lastError.message);
-      } else if (response && response.success) {
-        console.log('✅ Arduino updated successfully');
       }
     });
   }
 }
 
-// Stop resistance decay
 function stopResistanceDecay() {
   if (decayInterval) {
     clearInterval(decayInterval);
@@ -290,13 +270,12 @@ function updateOverlay(metrics, cumulative = false, engineName = 'gpt-5') {
   if (!overlay) return;
   
   overlay.style.display = 'block';
-  
-  // Flash animation
   overlay.classList.add('flash');
   setTimeout(() => overlay.classList.remove('flash'), 500);
   
-  // Update values
-  document.getElementById('tokens-value').textContent = metrics.tokens.toLocaleString();
+  if (typeof metrics.tokens === 'number') {
+    document.getElementById('tokens-value').textContent = metrics.tokens.toLocaleString();
+  }
   
   if (cumulative) {
     document.getElementById('cumulative-tokens').textContent = sessionData.totalTokens.toLocaleString();
@@ -305,33 +284,17 @@ function updateOverlay(metrics, cumulative = false, engineName = 'gpt-5') {
     document.getElementById('search-equiv').textContent = cumulativeMetrics.googleSearches.toLocaleString();
     document.getElementById('led-equiv').textContent = cumulativeMetrics.ledHours;
     
-    // Update cost estimate
     const tokenCosts = (enginesCreditsMapping[engineName] || enginesCreditsMapping['gpt-5']) / 1000;
     const totalCost = (sessionData.totalTokens * tokenCosts).toFixed(3);
     document.getElementById('cost-value').textContent = totalCost;
   }
 }
 
-// Send token data to Arduino via background script
-function sendToArduino(tokens) {
-  const pwmValue = Math.min(Math.round((tokens / 2000) * 255), 255); // Adjusted for GPT-5's higher token counts
-  
-  if (typeof chrome !== 'undefined' && chrome.runtime) {
-    chrome.runtime.sendMessage({
-      type: 'ARDUINO_UPDATE',
-      tokens,
-      pwmValue
-    });
-  }
-}
-
-// Track query
 function trackQuery(promptText, responseText = "", engineName = 'gpt-5') {
   if (!sessionActive) return;
   
   const promptTokens = estimateTokens(promptText);
-  const responseTokens = responseText ? Math.ceil(estimateTokens(responseText) * 1.05) : 0;
-  const totalTokens = promptTokens + responseTokens;
+  activeQueryTokens = promptTokens;
   
   console.log(`🔢 Tracking query - Prompt: "${promptText.substring(0, 50)}..." (${promptText.length} chars, ${promptTokens} tokens)`);
   
@@ -340,39 +303,28 @@ function trackQuery(promptText, responseText = "", engineName = 'gpt-5') {
     promptText,
     promptLength: promptText.length,
     promptTokens,
-    responseTokens,
-    tokens: promptTokens, // Start with just prompt tokens
+    responseTokens: 0,
+    tokens: promptTokens,
     engineName,
     depth: sessionData.queries.length + 1
   };
   
-  // First query tracking
   if (!sessionData.firstQueryTime) {
     sessionData.firstQueryTime = Date.now();
     queryData.timeToFirstQuery = sessionData.firstQueryTime - sessionData.startTime;
-    
-    // Start decay after first query
     startResistanceDecay();
   }
   
   sessionData.queries.push(queryData);
-  sessionData.totalTokens += promptTokens; // Only add prompt tokens initially
+  sessionData.totalTokens += promptTokens;
   
-  // ADD RESISTANCE based on prompt tokens
   addResistance(promptTokens);
   
   console.log(`📊 Total tokens now: ${sessionData.totalTokens}`);
   
-  // Update UI (only showing prompt tokens for now)
-  const metrics = calculateEnergyMetrics(promptTokens);
-  console.log(`🎨 About to call updateOverlay with metrics:`, metrics);
-  updateOverlay(metrics, true, engineName);
+  updateOverlay({ tokens: activeQueryTokens }, true, engineName);
   console.log(`✅ updateOverlay completed`);
   
-  // Send to Arduino
-  sendToArduino(promptTokens);
-  
-  // Save to storage
   if (typeof chrome !== 'undefined' && chrome.storage) {
     chrome.storage.local.set({ sessionData });
   }
@@ -380,20 +332,18 @@ function trackQuery(promptText, responseText = "", engineName = 'gpt-5') {
   console.log('📊 Query tracked (prompt only):', queryData);
 }
 
-// Prompt submission tracking
 let promptSent = false;
+let lastPromptTime = 0;
 
-// Get current engine name
 function getCurrentEngine() {
   const engineSelect = document.querySelector('.engine-select');
   if (engineSelect) {
     const singleValue = engineSelect.querySelector('[class$="singleValue"]');
     if (singleValue) return singleValue.textContent.trim();
   }
-  return 'gpt-5'; // Default to GPT-5
+  return 'gpt-5';
 }
 
-// Capture prompt text continuously
 function capturePromptText() {
   const text = getPromptText();
   if (text) {
@@ -401,62 +351,55 @@ function capturePromptText() {
   }
 }
 
-// Handle prompt submission
 function handleSubmit(source) {
   console.log(`🚀 Prompt submitted via ${source}! Session active:`, sessionActive);
 
   if (!sessionActive) return;
 
-  if (promptSent) {
-    console.log("⚠️ Already counted this submission");
+  const now = Date.now();
+  
+  // Check if this is a duplicate submission within 1 second
+  if (promptSent && (now - lastPromptTime) < 1000) {
+    console.log("⚠️ Ignoring duplicate submission within 1 second");
     return;
   }
 
-  promptSent = true;
-
-  // Use the captured prompt text (not the current textarea value which may be cleared)
   const promptText = capturedPromptText || getPromptText();
   
   if (!promptText) {
     console.warn("⚠️ No prompt text captured!");
-    promptSent = false;
     return;
   }
   
-  // Prevent rapid-fire submissions
-  const now = Date.now();
+  // Check if this is actually a NEW query (different from last one)
   if (sessionData.queries.length > 0) {
     const lastQuery = sessionData.queries[sessionData.queries.length - 1];
-    const timeSinceLastQuery = now - lastQuery.timestamp;
     
-    // If less than 2 seconds since last query, ignore
-    if (timeSinceLastQuery < 2000) {
-      console.log("⚠️ Ignoring rapid submission (less than 2s since last query)");
-      promptSent = false;
+    // If same text and less than 3 seconds, it's a duplicate
+    if (lastQuery.promptText === promptText && (now - lastQuery.timestamp) < 3000) {
+      console.log("⚠️ Duplicate query detected - ignoring");
       return;
     }
   }
   
+  promptSent = true;
+  lastPromptTime = now;
+  
   const engineName = getCurrentEngine();
   trackQuery(promptText, "", engineName);
-
   observeResponse(engineName);
-
-  // Clear captured text after tracking
+  
   capturedPromptText = "";
 
   setTimeout(() => {
     promptSent = false;
-  }, 2000);
+  }, 1000);
 }
 
-
-// Attach listeners
 function attachListener() {
   if (document.body.dataset.listenerAttached === "true") return;
   document.body.dataset.listenerAttached = "true";
 
-  // Continuously capture prompt text as user types
   document.addEventListener("input", (e) => {
     const target = e.target;
     const isChatGPTInput = target.tagName === "TEXTAREA" || target.isContentEditable;
@@ -465,22 +408,19 @@ function attachListener() {
     }
   }, true);
 
-  // Listen for Enter key on document
   document.addEventListener("keydown", (e) => {
     const target = e.target;
     const isChatGPTInput = target.tagName === "TEXTAREA" || target.isContentEditable;
     
     if (!isChatGPTInput) return;
     
-    // Capture text RIGHT BEFORE submission
     if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-      capturePromptText(); // Capture immediately before submission
+      capturePromptText();
       console.log("⌨️ Enter detected in ChatGPT input!");
       setTimeout(() => handleSubmit("Enter key"), 50);
     }
   }, true);
 
-  // Attach button click listener
   const attachButton = () => {
     const sendButton = document.querySelector('#composer-submit-button') ||
                        document.querySelector('button[data-testid="send-button"]') ||
@@ -493,7 +433,7 @@ function attachListener() {
     console.log("✅ Send button listener attached");
 
     sendButton.addEventListener("click", () => {
-      capturePromptText(); // Capture immediately before click
+      capturePromptText();
       console.log("🖱️ Send button clicked");
       handleSubmit("button click");
     });
@@ -505,15 +445,14 @@ function attachListener() {
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
-// Observe for ChatGPT responses
 function observeResponse(engineName = 'gpt-5') {
   const targetNode = document.querySelector('main') || document.body;
   
   let lastResponseLength = 0;
   let responseComplete = false;
   let stableCheckTimeout = null;
-  let stabilityCounter = 0; // Count how many times length stayed the same
-  const REQUIRED_STABLE_CHECKS = 3; // Need 3 consecutive stable checks
+  let stabilityCounter = 0;
+  const REQUIRED_STABLE_CHECKS = 3;
   
   const observer = new MutationObserver((mutations) => {
     const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
@@ -524,38 +463,29 @@ function observeResponse(engineName = 'gpt-5') {
       const currentLength = responseText.length;
       
       const lastQuery = sessionData.queries[sessionData.queries.length - 1];
-      
-      // Generate unique ID for this response
       const responseId = `${lastQuery.timestamp}-${sessionData.queries.length - 1}`;
       
-      // Skip if we've already fully counted this response
       if (countedResponseIds.has(responseId)) {
         observer.disconnect();
         return;
       }
       
-      // Only process if response has content and hasn't been counted yet
       if (currentLength > 0 && lastQuery.responseTokens === 0) {
         
-        // Check if response length is stable (stopped growing)
         if (currentLength === lastResponseLength) {
           stabilityCounter++;
           console.log(`🔍 Response stable ${stabilityCounter}/${REQUIRED_STABLE_CHECKS} (${currentLength} chars)`);
         } else {
-          // Length changed - reset counter
           stabilityCounter = 0;
         }
         
-        // Clear previous timeout
         if (stableCheckTimeout) {
           clearTimeout(stableCheckTimeout);
         }
         
-        // Only count after multiple stable checks
         if (stabilityCounter >= REQUIRED_STABLE_CHECKS && !responseComplete) {
           stableCheckTimeout = setTimeout(() => {
             if (!responseComplete && currentLength === lastResponseLength) {
-              // Response is definitely complete - count final tokens
               const responseTokens = estimateTokens(responseText);
               
               console.log(`📥 Response FINAL: ${responseTokens} tokens (${currentLength} chars)`);
@@ -564,24 +494,22 @@ function observeResponse(engineName = 'gpt-5') {
               lastQuery.tokens = lastQuery.promptTokens + responseTokens;
               sessionData.totalTokens += responseTokens;
               
-              // Mark this response as counted
+              activeQueryTokens = lastQuery.promptTokens + responseTokens;
+              
               countedResponseIds.add(responseId);
               responseComplete = true;
               
-              // ADD RESISTANCE for response tokens
               addResistance(responseTokens);
               
-              const metrics = calculateEnergyMetrics(lastQuery.tokens);
-              updateOverlay(metrics, true, engineName);
+              updateOverlay({ tokens: activeQueryTokens }, true, engineName);
               
               if (typeof chrome !== 'undefined' && chrome.storage) {
                 chrome.storage.local.set({ sessionData });
               }
               
-              // Disconnect observer after counting
               observer.disconnect();
             }
-          }, 2000); // Wait 2 seconds after stability confirmed
+          }, 2000);
         }
         
         lastResponseLength = currentLength;
@@ -595,11 +523,9 @@ function observeResponse(engineName = 'gpt-5') {
     characterData: true
   });
   
-  // Safety timeout - disconnect after 90 seconds
   setTimeout(() => {
     observer.disconnect();
     
-    // If response was never counted, count it now
     if (sessionData.queries.length > 0) {
       const lastQuery = sessionData.queries[sessionData.queries.length - 1];
       const responseId = `${lastQuery.timestamp}-${sessionData.queries.length - 1}`;
@@ -618,12 +544,13 @@ function observeResponse(engineName = 'gpt-5') {
             lastQuery.tokens = lastQuery.promptTokens + responseTokens;
             sessionData.totalTokens += responseTokens;
             
+            activeQueryTokens = lastQuery.promptTokens + responseTokens;
+            
             countedResponseIds.add(responseId);
             
             addResistance(responseTokens);
             
-            const metrics = calculateEnergyMetrics(lastQuery.tokens);
-            updateOverlay(metrics, true, engineName);
+            updateOverlay({ tokens: activeQueryTokens }, true, engineName);
             
             if (typeof chrome !== 'undefined' && chrome.storage) {
               chrome.storage.local.set({ sessionData });
@@ -632,10 +559,10 @@ function observeResponse(engineName = 'gpt-5') {
         }
       }
     }
-  }, 90000); // 90 second timeout
+  }, 90000);
 }
 
-// Token counter integration (from original code)
+// Remaining functions (checkIfPageLoaded, isKnownEngine, etc.) stay the same...
 function checkIfPageLoaded() {
   return document.querySelector('.slider-container');
 }
@@ -682,7 +609,7 @@ function updateTokensUsage(engineName) {
   
   let usageCosts = promptsBilled + completionBilled;
   if (usageCosts < 0.01) {
-    usageCosts = "<0.01";
+    usageCosts = "<0.01>";
   } else {
     usageCosts = parseFloat((usageCosts).toFixed(2));
   }
@@ -771,7 +698,6 @@ function registerWhenPageLoad() {
   }, pageLoadWaitIntervals);
 }
 
-// Listen for session control messages
 if (typeof chrome !== 'undefined' && chrome.runtime) {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('📨 Message received:', message.type);
@@ -781,7 +707,9 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
       sessionActive = true;
       resistanceLevel = 0;
       lastDecayTime = null;
-      countedResponseIds.clear(); // Clear previous response tracking
+      countedResponseIds.clear();
+      promptSent = false;
+      lastPromptTime = 0;
       
       sessionData = {
         startTime: Date.now(),
@@ -802,13 +730,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
       sessionActive = false;
       stopResistanceDecay();
       
-      // Stop the motor by sending 0% resistance
       resistanceLevel = 0;
       updateResistanceBar();
       sendResistanceToArduino(0, 0);
       console.log("🛑 Motor stopped - session ended");
       
-      // Clear counted responses
       countedResponseIds.clear();
       
       const completionTime = Date.now() - sessionData.startTime;
@@ -832,24 +758,20 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
   });
 }
 
-// Watch for DOM changes
 const pageObserver = new MutationObserver(attachListener);
 pageObserver.observe(document.body, {
   childList: true,
   subtree: true
 });
 
-// Initial attachment
 attachListener();
 
-// Initialize on load
 if (document.readyState !== 'complete') {
   window.addEventListener('load', registerWhenPageLoad);
 } else {
   registerWhenPageLoad();
 }
 
-// Load existing session if any
 if (typeof chrome !== 'undefined' && chrome.storage) {
   chrome.storage.local.get(['sessionData'], (result) => {
     if (result.sessionData && result.sessionData.startTime) {
