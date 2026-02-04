@@ -11,7 +11,6 @@ let sessionData = {
 };
 
 // Track which responses we've already counted
-let countedResponseIds = new Set();
 let activeQueryTokens = 0;
 
 // Resistance tracking
@@ -21,16 +20,16 @@ let lastDecayTime = null;
 
 // Resistance calculation: simple percentage based on tokens
 // 100 tokens = 10%, 500 tokens = 50%, 1000 tokens = 100%
-const TOKENS_FOR_MAX_RESISTANCE = 1000;
+const TOKENS_FOR_MAX_RESISTANCE = 850;
 
 // Decay rate: lose 1% every 15 seconds (but check more frequently)
-const DECAY_RATE = 1; // % per interval
-const DECAY_INTERVAL = 15000; // 15 seconds in ms
+const DECAY_RATE = 2; // % per interval
+const DECAY_INTERVAL = 5000; // 15 seconds in ms
 const DECAY_UPDATE_INTERVAL = 1000; // Send updates every 1 second
 
 // GPT-5 Energy conversion constants (updated estimates)
 const ENERGY_PER_TOKEN = 0.0004; // Wh per token (estimated for GPT-5, higher than GPT-4)
-const SMARTPHONE_CHARGE = 15; // Wh
+const SMARTPHONE_CHARGE = 15; // Wh`
 const GOOGLE_SEARCH = 0.0003; // Wh
 const LED_HOUR = 10; // Wh
 
@@ -371,23 +370,81 @@ function handleSubmit(source) {
     return;
   }
   
-  // Check if this is actually a NEW query (different from last one)
+  // Check for partial or full duplicates within 30 seconds
   if (sessionData.queries.length > 0) {
     const lastQuery = sessionData.queries[sessionData.queries.length - 1];
     
-    // If same text and less than 3 seconds, it's a duplicate
-    if (lastQuery.promptText === promptText && (now - lastQuery.timestamp) < 3000) {
-      console.log("⚠️ Duplicate query detected - ignoring");
-      return;
+    if ((now - lastQuery.timestamp) < 5000) {
+      const lastText = lastQuery.promptText;
+      
+      // Check if current prompt starts with the last prompt (partial duplicate)
+      if (promptText.startsWith(lastText)) {
+        const newPortion = promptText.substring(lastText.length);
+        
+        if (newPortion.length === 0) {
+          // Exact duplicate
+          console.log("⚠️ Exact duplicate query detected within 30 seconds - ignoring");
+          return;
+        }
+        
+        // Partial duplicate - only count the new portion
+        console.log(`📝 Partial duplicate detected. Only counting new portion: "${newPortion.substring(0, 50)}..."`);
+        const newTokens = estimateTokens(newPortion);
+        
+        const queryData = {
+          timestamp: Date.now(),
+          promptText: promptText,
+          promptLength: promptText.length,
+          promptTokens: newTokens,
+          responseTokens: 0,
+          tokens: newTokens,
+          engineName: getCurrentEngine(),
+          depth: sessionData.queries.length + 1,
+          isPartialDuplicate: true,
+          newPortionOnly: newPortion
+        };
+        
+        sessionData.queries.push(queryData);
+        sessionData.totalTokens += newTokens;
+        activeQueryTokens = newTokens;
+        
+        addResistance(newTokens);
+        
+        console.log(`📊 Total tokens now: ${sessionData.totalTokens} (added ${newTokens} new tokens)`);
+        
+        updateOverlay({ tokens: newTokens }, true, getCurrentEngine());
+        
+        if (typeof chrome !== 'undefined' && chrome.storage) {
+          chrome.storage.local.set({ sessionData });
+        }
+        
+        console.log('📊 Partial query tracked (new portion only):', queryData);
+        
+        capturedPromptText = "";
+        promptSent = true;
+        lastPromptTime = now;
+        
+        setTimeout(() => {
+          promptSent = false;
+        }, 1000);
+        
+        return;
+      }
+      
+      // Check if it's an exact duplicate but not a partial
+      if (lastText === promptText) {
+        console.log("⚠️ Exact duplicate query detected within 30 seconds - ignoring");
+        return;
+      }
     }
   }
   
+  // Normal new query
   promptSent = true;
   lastPromptTime = now;
   
   const engineName = getCurrentEngine();
   trackQuery(promptText, "", engineName);
-  observeResponse(engineName);
   
   capturedPromptText = "";
 
@@ -400,19 +457,23 @@ function attachListener() {
   if (document.body.dataset.listenerAttached === "true") return;
   document.body.dataset.listenerAttached = "true";
 
+  // More specific selector for ChatGPT's input area
+  const getChatGPTInput = () => {
+    return document.querySelector('#prompt-textarea') ||
+           document.querySelector('textarea[placeholder*="Message"]') ||
+           document.querySelector('div[contenteditable="true"][data-id="root"]');
+  };
+
   document.addEventListener("input", (e) => {
-    const target = e.target;
-    const isChatGPTInput = target.tagName === "TEXTAREA" || target.isContentEditable;
-    if (isChatGPTInput) {
+    const chatInput = getChatGPTInput();
+    if (chatInput && (e.target === chatInput || chatInput.contains(e.target))) {
       capturePromptText();
     }
   }, true);
 
   document.addEventListener("keydown", (e) => {
-    const target = e.target;
-    const isChatGPTInput = target.tagName === "TEXTAREA" || target.isContentEditable;
-    
-    if (!isChatGPTInput) return;
+    const chatInput = getChatGPTInput();
+    if (!chatInput || !(e.target === chatInput || chatInput.contains(e.target))) return;
     
     if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       capturePromptText();
@@ -445,124 +506,6 @@ function attachListener() {
   observer.observe(document.body, { childList: true, subtree: true });
 }
 
-function observeResponse(engineName = 'gpt-5') {
-  const targetNode = document.querySelector('main') || document.body;
-  
-  let lastResponseLength = 0;
-  let responseComplete = false;
-  let stableCheckTimeout = null;
-  let stabilityCounter = 0;
-  const REQUIRED_STABLE_CHECKS = 3;
-  
-  const observer = new MutationObserver((mutations) => {
-    const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
-    
-    if (messages.length > 0 && sessionData.queries.length > 0) {
-      const latestMessage = messages[messages.length - 1];
-      const responseText = latestMessage.textContent || "";
-      const currentLength = responseText.length;
-      
-      const lastQuery = sessionData.queries[sessionData.queries.length - 1];
-      const responseId = `${lastQuery.timestamp}-${sessionData.queries.length - 1}`;
-      
-      if (countedResponseIds.has(responseId)) {
-        observer.disconnect();
-        return;
-      }
-      
-      if (currentLength > 0 && lastQuery.responseTokens === 0) {
-        
-        if (currentLength === lastResponseLength) {
-          stabilityCounter++;
-          console.log(`🔍 Response stable ${stabilityCounter}/${REQUIRED_STABLE_CHECKS} (${currentLength} chars)`);
-        } else {
-          stabilityCounter = 0;
-        }
-        
-        if (stableCheckTimeout) {
-          clearTimeout(stableCheckTimeout);
-        }
-        
-        if (stabilityCounter >= REQUIRED_STABLE_CHECKS && !responseComplete) {
-          stableCheckTimeout = setTimeout(() => {
-            if (!responseComplete && currentLength === lastResponseLength) {
-              const responseTokens = estimateTokens(responseText);
-              
-              console.log(`📥 Response FINAL: ${responseTokens} tokens (${currentLength} chars)`);
-              
-              lastQuery.responseTokens = responseTokens;
-              lastQuery.tokens = lastQuery.promptTokens + responseTokens;
-              sessionData.totalTokens += responseTokens;
-              
-              activeQueryTokens = lastQuery.promptTokens + responseTokens;
-              
-              countedResponseIds.add(responseId);
-              responseComplete = true;
-              
-              addResistance(responseTokens);
-              
-              updateOverlay({ tokens: activeQueryTokens }, true, engineName);
-              
-              if (typeof chrome !== 'undefined' && chrome.storage) {
-                chrome.storage.local.set({ sessionData });
-              }
-              
-              observer.disconnect();
-            }
-          }, 2000);
-        }
-        
-        lastResponseLength = currentLength;
-      }
-    }
-  });
-
-  observer.observe(targetNode, {
-    childList: true,
-    subtree: true,
-    characterData: true
-  });
-  
-  setTimeout(() => {
-    observer.disconnect();
-    
-    if (sessionData.queries.length > 0) {
-      const lastQuery = sessionData.queries[sessionData.queries.length - 1];
-      const responseId = `${lastQuery.timestamp}-${sessionData.queries.length - 1}`;
-      
-      if (!countedResponseIds.has(responseId) && lastQuery.responseTokens === 0) {
-        const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
-        if (messages.length > 0) {
-          const latestMessage = messages[messages.length - 1];
-          const responseText = latestMessage.textContent || "";
-          const responseTokens = estimateTokens(responseText);
-          
-          if (responseTokens > 0) {
-            console.log(`⏱️ Safety timeout: Counting response ${responseTokens} tokens`);
-            
-            lastQuery.responseTokens = responseTokens;
-            lastQuery.tokens = lastQuery.promptTokens + responseTokens;
-            sessionData.totalTokens += responseTokens;
-            
-            activeQueryTokens = lastQuery.promptTokens + responseTokens;
-            
-            countedResponseIds.add(responseId);
-            
-            addResistance(responseTokens);
-            
-            updateOverlay({ tokens: activeQueryTokens }, true, engineName);
-            
-            if (typeof chrome !== 'undefined' && chrome.storage) {
-              chrome.storage.local.set({ sessionData });
-            }
-          }
-        }
-      }
-    }
-  }, 90000);
-}
-
-// Remaining functions (checkIfPageLoaded, isKnownEngine, etc.) stay the same...
 function checkIfPageLoaded() {
   return document.querySelector('.slider-container');
 }
@@ -707,7 +650,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
       sessionActive = true;
       resistanceLevel = 0;
       lastDecayTime = null;
-      countedResponseIds.clear();
       promptSent = false;
       lastPromptTime = 0;
       
@@ -734,8 +676,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
       updateResistanceBar();
       sendResistanceToArduino(0, 0);
       console.log("🛑 Motor stopped - session ended");
-      
-      countedResponseIds.clear();
       
       const completionTime = Date.now() - sessionData.startTime;
       const finalData = {
