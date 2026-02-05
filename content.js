@@ -27,6 +27,9 @@ const DECAY_RATE = 2; // % per interval
 const DECAY_INTERVAL = 5000; // 15 seconds in ms
 const DECAY_UPDATE_INTERVAL = 1000; // Send updates every 1 second
 
+// Image generation scaling factor
+const IMAGE_GENERATION_MULTIPLIER = 2.907;
+
 // GPT-5 Energy conversion constants (updated estimates)
 const ENERGY_PER_TOKEN = 0.0004; // Wh per token (estimated for GPT-5, higher than GPT-4)
 const SMARTPHONE_CHARGE = 15; // Wh`
@@ -48,6 +51,9 @@ const pageLoadWaitIntervals = 1000;
 
 // Variable to store captured prompt text
 let capturedPromptText = "";
+
+// Track current query index for image detection
+let currentQueryIndex = -1;
 
 function getPromptText() {
   const textarea = document.querySelector("textarea");
@@ -289,6 +295,93 @@ function updateOverlay(metrics, cumulative = false, engineName = 'gpt-5') {
   }
 }
 
+function applyImageScaling(queryIndex) {
+  if (queryIndex < 0 || queryIndex >= sessionData.queries.length) {
+    console.warn(`⚠️ Invalid query index for image scaling: ${queryIndex}`);
+    return;
+  }
+  
+  const query = sessionData.queries[queryIndex];
+  
+  // Check if scaling already applied
+  if (query.imageScalingApplied) {
+    console.log(`⚠️ Image scaling already applied to query ${queryIndex}`);
+    return;
+  }
+  
+  const originalTokens = query.promptTokens;
+  const scaledTokens = Math.round(originalTokens * IMAGE_GENERATION_MULTIPLIER);
+  const additionalTokens = scaledTokens - originalTokens;
+  
+  console.log(`🖼️ Image detected! Scaling query ${queryIndex} tokens: ${originalTokens} → ${scaledTokens} (×${IMAGE_GENERATION_MULTIPLIER})`);
+  
+  // Update query data
+  query.promptTokens = scaledTokens;
+  query.tokens = scaledTokens;
+  query.imageGenerated = true;
+  query.imageScalingApplied = true;
+  query.originalPromptTokens = originalTokens;
+  
+  // Update session totals
+  sessionData.totalTokens += additionalTokens;
+  
+  // Add resistance for the additional tokens
+  addResistance(additionalTokens);
+  
+  // Update overlay
+  updateOverlay({ tokens: scaledTokens }, true, query.engineName);
+  
+  // Save to storage
+  if (typeof chrome !== 'undefined' && chrome.storage) {
+    chrome.storage.local.set({ sessionData });
+  }
+  
+  console.log(`✅ Image scaling applied. Total tokens now: ${sessionData.totalTokens}`);
+}
+
+function detectImageGeneration() {
+  // Monitor for image generation in ChatGPT responses
+  const imageObserver = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      for (const node of mutation.addedNodes) {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          // Check for DALL-E image containers or generated images
+          const imageContainers = node.querySelectorAll ? 
+            node.querySelectorAll('img[src*="dalle"], img[alt*="generated"], .dalle-image, [data-message-author-role="assistant"] img') : [];
+          
+          // Also check if the node itself is an image
+          if (node.tagName === 'IMG' && (
+            node.src.includes('dalle') || 
+            node.alt.toLowerCase().includes('generated') ||
+            node.closest('[data-message-author-role="assistant"]')
+          )) {
+            console.log('🖼️ Image generated detected (direct)');
+            if (currentQueryIndex >= 0) {
+              applyImageScaling(currentQueryIndex);
+            }
+          }
+          
+          if (imageContainers.length > 0) {
+            console.log(`🖼️ Image generated detected (${imageContainers.length} images found)`);
+            if (currentQueryIndex >= 0) {
+              applyImageScaling(currentQueryIndex);
+            }
+          }
+        }
+      }
+    }
+  });
+  
+  // Observe the main chat container
+  const chatContainer = document.querySelector('main') || document.body;
+  imageObserver.observe(chatContainer, {
+    childList: true,
+    subtree: true
+  });
+  
+  console.log('👁️ Image generation observer started');
+}
+
 function trackQuery(promptText, responseText = "", engineName = 'gpt-5') {
   if (!sessionActive) return;
   
@@ -305,7 +398,10 @@ function trackQuery(promptText, responseText = "", engineName = 'gpt-5') {
     responseTokens: 0,
     tokens: promptTokens,
     engineName,
-    depth: sessionData.queries.length + 1
+    depth: sessionData.queries.length + 1,
+    resistanceLevel: Math.round(resistanceLevel),
+    imageGenerated: false,
+    imageScalingApplied: false
   };
   
   if (!sessionData.firstQueryTime) {
@@ -315,6 +411,7 @@ function trackQuery(promptText, responseText = "", engineName = 'gpt-5') {
   }
   
   sessionData.queries.push(queryData);
+  currentQueryIndex = sessionData.queries.length - 1;
   sessionData.totalTokens += promptTokens;
   
   addResistance(promptTokens);
@@ -400,11 +497,15 @@ function handleSubmit(source) {
           tokens: newTokens,
           engineName: getCurrentEngine(),
           depth: sessionData.queries.length + 1,
+          resistanceLevel: Math.round(resistanceLevel),
+          imageGenerated: false,
+          imageScalingApplied: false,
           isPartialDuplicate: true,
           newPortionOnly: newPortion
         };
         
         sessionData.queries.push(queryData);
+        currentQueryIndex = sessionData.queries.length - 1;
         sessionData.totalTokens += newTokens;
         activeQueryTokens = newTokens;
         
@@ -652,6 +753,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
       lastDecayTime = null;
       promptSent = false;
       lastPromptTime = 0;
+      currentQueryIndex = -1;
       
       sessionData = {
         startTime: Date.now(),
@@ -664,6 +766,9 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
       console.log("🎨 About to create overlay...");
       createOverlay();
       console.log("✅ Overlay creation complete");
+      
+      // Start image detection
+      detectImageGeneration();
       
       sendResponse({ success: true });
       return true;

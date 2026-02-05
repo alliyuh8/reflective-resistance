@@ -304,9 +304,13 @@ function exportData(data) {
   csv += `Completion Time (formatted),${formatDuration(completionTime)}\n\n`;
   
   // Query details
-  csv += 'Query #,Timestamp,Prompt Length,Prompt Tokens,Response Tokens,Total Tokens,Depth,Time from Start (ms)\n';
+  csv += 'Query #,Timestamp,Prompt Length,Prompt Tokens,Response Tokens,Total Tokens,Depth,Resistance Level (%),Image Generated,Image Scaling Applied,Original Tokens,Time from Start (ms)\n';
   data.queries.forEach((query, idx) => {
-    csv += `${idx + 1},${new Date(query.timestamp).toISOString()},${query.promptLength},${query.promptTokens},${query.responseTokens},${query.tokens},${query.depth},${query.timestamp - data.startTime}\n`;
+    const resistanceLevel = query.resistanceLevel !== undefined ? query.resistanceLevel : 'N/A';
+    const imageGenerated = query.imageGenerated ? 'Yes' : 'No';
+    const imageScalingApplied = query.imageScalingApplied ? 'Yes' : 'No';
+    const originalTokens = query.originalPromptTokens !== undefined ? query.originalPromptTokens : query.promptTokens;
+    csv += `${idx + 1},${new Date(query.timestamp).toISOString()},${query.promptLength},${query.promptTokens},${query.responseTokens},${query.tokens},${query.depth},${resistanceLevel},${imageGenerated},${imageScalingApplied},${originalTokens},${query.timestamp - data.startTime}\n`;
   });
   
   // Download
