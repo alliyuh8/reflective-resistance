@@ -1,5 +1,7 @@
 let sessionActive = false;
 let updateInterval;
+let timerInterval;
+let sessionStartTime = null;
 
 // DOM elements
 const startBtn = document.getElementById('startBtn');
@@ -9,13 +11,7 @@ const totalQueries = document.getElementById('totalQueries');
 const totalTokens = document.getElementById('totalTokens');
 const timeToFirst = document.getElementById('timeToFirst');
 const duration = document.getElementById('duration');
-const arduinoTokens = document.getElementById('arduinoTokens');
-const arduinoPWM = document.getElementById('arduinoPWM');
-const downloadArduinoBtn = document.getElementById('downloadArduino');
 const exportDataBtn = document.getElementById('exportData');
-const progressBar = document.getElementById('progressBar');
-const resistancePercent = document.getElementById('resistancePercent');
-const resistanceDesc = document.getElementById('resistanceDesc');
 
 // Resistance calculation
 const TOKENS_FOR_MAX_RESISTANCE = 1000;
@@ -46,6 +42,30 @@ function formatDuration(ms) {
     return `${minutes}m ${seconds % 60}s`;
   } else {
     return `${seconds}s`;
+  }
+}
+
+// Update live timer
+function updateTimer() {
+  if (sessionActive && sessionStartTime) {
+    const elapsed = Date.now() - sessionStartTime;
+    duration.textContent = formatDuration(elapsed);
+  }
+}
+
+// Start live timer
+function startTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+  }
+  timerInterval = setInterval(updateTimer, 1000);
+}
+
+// Stop live timer
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
   }
 }
 
@@ -99,36 +119,30 @@ function updateUI() {
         totalQueries.textContent = data.queries?.length || 0;
         totalTokens.textContent = (data.totalTokens || 0).toLocaleString();
         
-        // Update resistance bar
-        const resistance = calculateResistance(data.totalTokens || 0);
-        progressBar.style.width = `${resistance.percent}%`;
-        resistancePercent.textContent = `${Math.round(resistance.percent)}%`;
-        resistanceDesc.textContent = resistance.label;
-        
         if (data.firstQueryTime && data.startTime) {
           timeToFirst.textContent = formatDuration(data.firstQueryTime - data.startTime);
         }
         
+        // Store session start time for live timer
         if (data.startTime && sessionActive) {
-          duration.textContent = formatDuration(Date.now() - data.startTime);
+          sessionStartTime = data.startTime;
+          // Timer updates separately every second
+        } else if (!sessionActive) {
+          sessionStartTime = null;
+          // Show final duration if session ended
+          if (data.startTime) {
+            const completionTime = data.completionTime || (Date.now() - data.startTime);
+            duration.textContent = formatDuration(completionTime);
+          }
         }
       }
     });
-  });
-  
-  // Update Arduino info from storage
-  chrome.storage.local.get(['lastTokens', 'lastPWM'], (result) => {
-    if (result.lastTokens !== undefined) {
-      arduinoTokens.textContent = result.lastTokens;
-    }
-    if (result.lastPWM !== undefined) {
-      arduinoPWM.textContent = result.lastPWM;
-    }
   });
 }
 
 // Start session
 startBtn.addEventListener('click', () => {
+  console.log('🟢 Start button clicked');
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]) {
       console.error('No active tab found');
@@ -153,10 +167,20 @@ startBtn.addEventListener('click', () => {
       
       if (response && response.success) {
         console.log('✅ Session started successfully');
-        updateUI();
+        sessionActive = true;
+        sessionStartTime = Date.now();
+        
+        // Force button states
+        startBtn.disabled = true;
+        endBtn.disabled = false;
+        status.textContent = '🟢 Session Active';
+        status.classList.add('active');
+        
         // Start periodic updates
         if (updateInterval) clearInterval(updateInterval);
-        updateInterval = setInterval(updateUI, 1000);
+        updateInterval = setInterval(updateUI, 2000);
+        // Start live timer
+        startTimer();
       } else {
         console.error('Failed to start session');
         alert('Failed to start session');
@@ -167,8 +191,14 @@ startBtn.addEventListener('click', () => {
 
 // End session
 endBtn.addEventListener('click', () => {
+  console.log('🔴 End button clicked, sessionActive:', sessionActive);
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    if (!tabs[0]) return;
+    if (!tabs[0]) {
+      console.error('No active tab for end session');
+      return;
+    }
+    
+    console.log('Sending END_SESSION to tab:', tabs[0].id);
     
     chrome.tabs.sendMessage(tabs[0].id, { type: 'END_SESSION' }, (response) => {
       if (chrome.runtime.lastError) {
@@ -178,14 +208,24 @@ endBtn.addEventListener('click', () => {
 
       if (response && response.success) {
         console.log('📊 Final session data:', response.data);
+        sessionActive = false;
+        
+        // Force button states
+        startBtn.disabled = false;
+        endBtn.disabled = true;
+        status.textContent = 'Session Inactive';
+        status.classList.remove('active');
+        
+        stopTimer();
         updateUI();
+        
         if (updateInterval) {
           clearInterval(updateInterval);
           updateInterval = null;
         }
         
-        // Optionally auto-export
-        if (response.data && response.data.queries.length > 0) {
+        // Auto-export prompt
+        if (response.data && response.data.queries && response.data.queries.length > 0) {
           setTimeout(() => {
             if (confirm('Export session data to CSV?')) {
               exportData(response.data);
@@ -195,77 +235,6 @@ endBtn.addEventListener('click', () => {
       }
     });
   });
-});
-
-// Download Arduino script
-downloadArduinoBtn.addEventListener('click', () => {
-  // Arduino code template
-  const arduinoCode = `// Token-based Air Pump Control
-// Generated by ChatGPT Energy Tracker
-
-const int pwmPin = 9;
-const int in1Pin = 7;
-const int in2Pin = 6;
-
-int currentPwm = 0;
-int targetPwm = 0;
-String inputString = "";
-
-void setup() {
-  pinMode(pwmPin, OUTPUT);
-  pinMode(in1Pin, OUTPUT);
-  pinMode(in2Pin, OUTPUT);
-  
-  Serial.begin(9600);
-  Serial.println("Arduino Energy Tracker Ready");
-}
-
-void loop() {
-  while (Serial.available()) {
-    char inChar = (char)Serial.read();
-    inputString += inChar;
-    if (inChar == '\\n') {
-      processCommand(inputString);
-      inputString = "";
-    }
-  }
-  
-  // Ramp to target
-  if (currentPwm < targetPwm) {
-    currentPwm = min(currentPwm + 4, targetPwm);
-  } else if (currentPwm > targetPwm) {
-    currentPwm = max(currentPwm - 4, targetPwm);
-  }
-  
-  // Apply PWM
-  if (currentPwm == 0) {
-    digitalWrite(in1Pin, LOW);
-    digitalWrite(in2Pin, LOW);
-  } else {
-    digitalWrite(in1Pin, HIGH);
-    digitalWrite(in2Pin, LOW);
-    analogWrite(pwmPin, currentPwm);
-  }
-  
-  delay(10);
-}
-
-void processCommand(String cmd) {
-  cmd.trim();
-  if (cmd.startsWith("PWM:")) {
-    targetPwm = cmd.substring(4).toInt();
-    Serial.print("PWM set to: ");
-    Serial.println(targetPwm);
-  }
-}`;
-
-  const blob = new Blob([arduinoCode], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `energy_tracker_${Date.now()}.ino`;
-  a.click();
-  URL.revokeObjectURL(url);
 });
 
 // Export session data
@@ -333,5 +302,8 @@ updateInterval = setInterval(updateUI, 2000);
 window.addEventListener('beforeunload', () => {
   if (updateInterval) {
     clearInterval(updateInterval);
+  }
+  if (timerInterval) {
+    clearInterval(timerInterval);
   }
 });

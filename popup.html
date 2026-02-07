@@ -14,7 +14,7 @@
       width: 400px;
       padding: 20px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #629460 0%, #243119 100%);
       color: white;
     }
     
@@ -50,12 +50,13 @@
     }
     
     #startBtn {
-      background: #48bb78;
-      color: white;
+      background: #67be52;
+      color: #ffffff;
+      font-weight: 700;
     }
     
     #endBtn {
-      background: #f56565;
+      background: #eb4747;
       color: white;
     }
     
@@ -75,15 +76,16 @@
     }
     
     .status.active {
-      background: rgba(72, 187, 120, 0.3);
-      border: 2px solid #48bb78;
+      background: rgba(172, 236, 161, 0.3);
+      border: 2px solid #ACECA1;
     }
     
     .metrics {
-      background: rgba(0, 0, 0, 0.2);
+      background: rgba(36, 49, 25, 0.4);
       padding: 16px;
       border-radius: 8px;
       margin-bottom: 20px;
+      border: 1px solid rgba(172, 236, 161, 0.2);
     }
     
     .metric-row {
@@ -107,39 +109,11 @@
       font-size: 14px;
     }
     
-    .arduino-section {
-      background: rgba(0, 0, 0, 0.2);
-      padding: 16px;
-      border-radius: 8px;
-      margin-top: 20px;
-    }
-    
-    .arduino-section h3 {
-      font-size: 14px;
-      margin-bottom: 10px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    
-    .arduino-info {
-      display: flex;
-      justify-content: space-between;
-      margin-bottom: 10px;
-      font-size: 12px;
-    }
-    
-    #downloadArduino {
-      width: 100%;
-      background: #4299e1;
-      color: white;
-      margin-top: 10px;
-    }
-    
     #exportData {
       width: 100%;
-      background: #ed8936;
-      color: white;
+      background: #96BE8C;
+      color: #243119;
+      font-weight: 700;
       margin-top: 10px;
     }
     
@@ -153,7 +127,7 @@
   </style>
 </head>
 <body>
-  <h1>⚡ ChatGPT Energy Tracker</h1>
+  <h1>🌱 ChatGPT Energy Tracker</h1>
   
   <div class="session-controls">
     <button id="startBtn">▶ Start Session</button>
@@ -181,19 +155,6 @@
       <span class="metric-label">Session Duration</span>
       <span class="metric-value" id="duration">--</span>
     </div>
-  </div>
-  
-  <div class="arduino-section">
-    <h3>🤖 Arduino Output</h3>
-    <div class="arduino-info">
-      <span>Current Tokens:</span>
-      <strong id="arduinoTokens">0</strong>
-    </div>
-    <div class="arduino-info">
-      <span>PWM Value:</span>
-      <strong id="arduinoPWM">0</strong>
-    </div>
-    <button id="downloadArduino">📥 Download Arduino Script</button>
   </div>
   
   <button id="exportData">📊 Export Session Data (CSV)</button>

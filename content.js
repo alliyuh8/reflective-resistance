@@ -1,4 +1,4 @@
-console.log("🔥 ChatGPT Energy Tracker Extension loaded (GPT-5 optimized) - VERSION 2.0");
+console.log("🔥 ChatGPT Energy Tracker Extension loaded (GPT-5 optimized) - VERSION 2.1");
 
 // Session tracking state
 let sessionActive = false;
@@ -18,13 +18,16 @@ let resistanceLevel = 0; // 0-100%
 let decayInterval = null;
 let lastDecayTime = null;
 
+// Timer tracking
+let timerInterval = null;
+
 // Resistance calculation: simple percentage based on tokens
 // 100 tokens = 10%, 500 tokens = 50%, 1000 tokens = 100%
-const TOKENS_FOR_MAX_RESISTANCE = 850;
+const TOKENS_FOR_MAX_RESISTANCE = 80;
 
 // Decay rate: lose 1% every 15 seconds (but check more frequently)
 const DECAY_RATE = 2; // % per interval
-const DECAY_INTERVAL = 5000; // 15 seconds in ms
+const DECAY_INTERVAL = 5000; // 5 seconds in ms
 const DECAY_UPDATE_INTERVAL = 1000; // Send updates every 1 second
 
 // Image generation scaling factor
@@ -32,7 +35,7 @@ const IMAGE_GENERATION_MULTIPLIER = 2.907;
 
 // GPT-5 Energy conversion constants (updated estimates)
 const ENERGY_PER_TOKEN = 0.0004; // Wh per token (estimated for GPT-5, higher than GPT-4)
-const SMARTPHONE_CHARGE = 15; // Wh`
+const SMARTPHONE_CHARGE = 15; // Wh
 const GOOGLE_SEARCH = 0.0003; // Wh
 const LED_HOUR = 10; // Wh
 
@@ -92,6 +95,48 @@ function calculateEnergyMetrics(tokens) {
   };
 }
 
+function formatDuration(ms) {
+  if (!ms) return '0s';
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  
+  if (hours > 0) {
+    return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+  } else if (minutes > 0) {
+    return `${minutes}m ${seconds % 60}s`;
+  } else {
+    return `${seconds}s`;
+  }
+}
+
+function updateTimer() {
+  if (!sessionActive || !sessionData.startTime) return;
+  
+  const elapsed = Date.now() - sessionData.startTime;
+  const timerElem = document.getElementById('session-timer');
+  if (timerElem) {
+    timerElem.textContent = formatDuration(elapsed);
+  }
+}
+
+function startTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+  }
+  timerInterval = setInterval(updateTimer, 1000);
+  updateTimer(); // Update immediately
+  console.log("⏱️ Timer started");
+}
+
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+    console.log("⏱️ Timer stopped");
+  }
+}
+
 function createOverlay() {
   if (document.getElementById('energy-overlay')) {
     console.log("⚠️ Overlay already exists");
@@ -105,13 +150,20 @@ function createOverlay() {
   overlay.className = 'energy-overlay';
   overlay.innerHTML = `
     <div class="energy-header">
-      <span class="energy-title">⚡ Energy Impact (GPT-5)</span>
+      <span class="energy-title">🌱 Energy Impact</span>
       <button id="close-overlay" class="close-btn">×</button>
     </div>
     <div class="energy-content">
+      <div class="timer-section">
+        <div class="timer-display">
+          <span class="timer-icon">⏱️</span>
+          <span class="timer-label">Session Time:</span>
+          <span class="timer-value" id="session-timer">0s</span>
+        </div>
+      </div>
       <div class="resistance-section">
         <div class="resistance-header">
-          <span class="resistance-label">🎯 Resistance Level</span>
+          <span class="resistance-label">Resistance Level</span>
           <span class="resistance-value" id="resistance-percent">0%</span>
         </div>
         <div class="progress-bar-container">
@@ -160,10 +212,11 @@ function createOverlay() {
   const checkElems = {
     'resistance-percent': document.getElementById('resistance-percent'),
     'progress-fill': document.getElementById('progress-fill'),
-    'resistance-status': document.getElementById('resistance-status')
+    'resistance-status': document.getElementById('resistance-status'),
+    'session-timer': document.getElementById('session-timer')
   };
   
-  console.log("🔍 Resistance elements check:", checkElems);
+  console.log("🔍 Overlay elements check:", checkElems);
   
   document.getElementById('close-overlay').addEventListener('click', () => {
     overlay.style.display = 'none';
@@ -275,8 +328,6 @@ function updateOverlay(metrics, cumulative = false, engineName = 'gpt-5') {
   if (!overlay) return;
   
   overlay.style.display = 'block';
-  overlay.classList.add('flash');
-  setTimeout(() => overlay.classList.remove('flash'), 500);
   
   if (typeof metrics.tokens === 'number') {
     document.getElementById('tokens-value').textContent = metrics.tokens.toLocaleString();
@@ -767,6 +818,9 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
       createOverlay();
       console.log("✅ Overlay creation complete");
       
+      // Start timer
+      startTimer();
+      
       // Start image detection
       detectImageGeneration();
       
@@ -776,6 +830,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
     else if (message.type === 'END_SESSION') {
       sessionActive = false;
       stopResistanceDecay();
+      stopTimer();
       
       resistanceLevel = 0;
       updateResistanceBar();

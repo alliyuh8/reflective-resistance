@@ -1,131 +1,158 @@
-/* Energy Tracker Overlay Styles */
-
+/* Energy Overlay Styles - Sustainability Green Theme */
 .energy-overlay {
   position: fixed;
   top: 20px;
   right: 20px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  width: 320px;
+  background: linear-gradient(135deg, #629460 0%, #243119 100%);
   border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   color: white;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   z-index: 999999;
-  min-width: 300px;
-  max-width: 340px;
-  backdrop-filter: blur(10px);
-  animation: slideIn 0.3s ease-out;
+  opacity: 0;
+  animation: slideIn 0.3s ease-out forwards;
+  border: 2px solid rgba(172, 236, 161, 0.3);
 }
 
 @keyframes slideIn {
   from {
-    transform: translateX(400px);
     opacity: 0;
+    transform: translateX(100px);
   }
   to {
-    transform: translateX(0);
     opacity: 1;
+    transform: translateX(0);
   }
 }
 
 .energy-overlay.flash {
-  /* Removed flash animation - too distracting */
+  animation: flash 0.5s ease-out;
 }
 
 @keyframes flash {
-  /* Keeping definition but not using it */
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }
 
 .energy-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(172, 236, 161, 0.3);
+  background: rgba(36, 49, 25, 0.3);
 }
 
 .energy-title {
   font-size: 18px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  color: #ACECA1;
 }
 
 .close-btn {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(172, 236, 161, 0.2);
   border: none;
-  color: white;
-  width: 28px;
-  height: 28px;
+  color: #ACECA1;
+  font-size: 24px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   cursor: pointer;
-  font-size: 20px;
-  line-height: 1;
-  transition: all 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background 0.2s;
+  line-height: 1;
+  padding: 0;
 }
 
 .close-btn:hover {
-  background: rgba(255, 255, 255, 0.3);
-  transform: rotate(90deg);
+  background: rgba(172, 236, 161, 0.4);
 }
 
 .energy-content {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  padding: 20px;
 }
 
-/* Resistance Progress Bar */
+/* Timer Section */
+.timer-section {
+  background: rgba(36, 49, 25, 0.5);
+  border-radius: 12px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(172, 236, 161, 0.3);
+}
+
+.timer-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: center;
+}
+
+.timer-icon {
+  font-size: 20px;
+}
+
+.timer-label {
+  font-size: 15px;
+  opacity: 0.9;
+  color: #ffffff;
+}
+
+.timer-value {
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 80px;
+  text-align: right;
+  color: #ffffff;
+}
+
+/* Resistance Section */
 .resistance-section {
-  background: rgba(0, 0, 0, 0.2);
-  padding: 14px;
-  border-radius: 10px;
-  margin-bottom: 8px;
+  background: rgba(36, 49, 25, 0.5);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+  border: 1px solid rgba(172, 236, 161, 0.3);
 }
 
 .resistance-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .resistance-label {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  opacity: 0.9;
+  color: #ffffff;
 }
 
 .resistance-value {
   font-size: 16px;
-  font-weight: 800;
-  color: #ffd700;
+  font-weight: 700;
+  color: #ffffff;
 }
 
 .progress-bar-container {
   position: relative;
   height: 24px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(36, 49, 25, 0.6);
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  margin-bottom: 8px;
+  border: 1px solid rgba(172, 236, 161, 0.2);
 }
 
 .progress-bar-fill {
   height: 100%;
-  background: linear-gradient(90deg, #48bb78 0%, #f6ad55 50%, #f56565 100%);
+  background: linear-gradient(90deg, #ACECA1 0%, #96BE8C 25%, #f4a460 50%, #e67e50 75%, #eb4747 100%);
+  transition: width 0.3s ease-out;
   border-radius: 12px;
-  transition: width 0.5s ease-out;
-  position: relative;
-  box-shadow: 0 0 10px rgba(72, 187, 120, 0.5);
-  min-width: 2px; /* Ensure visibility even at low percentages */
 }
 
 .progress-bar-markers {
@@ -136,131 +163,103 @@
   height: 100%;
   display: flex;
   justify-content: space-between;
+  align-items: center;
   pointer-events: none;
 }
 
 .progress-marker {
+  position: absolute;
   width: 2px;
   height: 100%;
-  background: rgba(255, 255, 255, 0.4);
-  position: relative;
-}
-
-.progress-marker::after {
-  content: attr(data-label);
-  position: absolute;
-  top: -18px;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 9px;
-  font-weight: 600;
-  white-space: nowrap;
-  opacity: 0.7;
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .resistance-status {
-  margin-top: 8px;
-  font-size: 11px;
   text-align: center;
-  opacity: 0.8;
-  font-style: italic;
+  font-size: 12px;
+  opacity: 0.9;
+  color: #ACECA1;
+  font-weight: 600;
 }
 
+/* Energy Stats */
 .energy-stat {
   text-align: center;
   padding: 12px;
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  backdrop-filter: blur(5px);
+  background: rgba(36, 49, 25, 0.3);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(172, 236, 161, 0.2);
 }
 
 .energy-stat.cumulative {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(98, 148, 96, 0.3);
+  border: 1px solid rgba(172, 236, 161, 0.4);
 }
 
 .stat-value {
   display: block;
-  font-size: 32px;
-  font-weight: 800;
-  line-height: 1;
-  margin-bottom: 6px;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  font-size: 28px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-bottom: 4px;
 }
 
 .stat-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  opacity: 0.9;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  font-size: 20px;
+  opacity: 0.8;
+  color: #ffffff;
 }
 
+/* Divider */
 .energy-divider {
-  height: 2px;
-  background: linear-gradient(90deg, 
-    transparent 0%, 
-    rgba(255, 255, 255, 0.5) 50%, 
-    transparent 100%);
-  margin: 4px 0;
+  height: 1px;
+  background: rgba(172, 236, 161, 0.3);
+  margin: 16px 0;
 }
 
+/* Equivalents */
 .equivalents {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  background: rgba(36, 49, 25, 0.4);
+  border-radius: 8px;
   padding: 12px;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 10px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(172, 236, 161, 0.2);
 }
 
 .equiv-item {
   display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  font-weight: 500;
+  padding: 6px 8px;
+  font-size: 13px;
+  border-bottom: 1px solid rgba(172, 236, 161, 0.1);
+}
+
+.equiv-item:last-child {
+  border-bottom: none;
 }
 
 .equiv-item span {
   font-weight: 700;
-  color: #ffd700;
+  color: #ACECA1;
 }
 
+/* Cost Estimate */
 .cost-estimate {
+  background: rgba(36, 49, 25, 0.4);
+  border-radius: 8px;
   padding: 12px;
-  background: rgba(255, 215, 0, 0.2);
-  border-radius: 10px;
-  border: 1px solid rgba(255, 215, 0, 0.3);
+  text-align: center;
+  border: 1px solid rgba(172, 236, 161, 0.2);
 }
 
 .cost-item {
-  font-size: 16px;
-  font-weight: 600;
-  text-align: center;
-}
-
-.cost-item span {
-  color: #ffd700;
-  font-size: 20px;
-  font-weight: 800;
-}
-
-/* Token counter styles (from original code) */
-.tokens-div {
-  margin: 10px 0;
-  padding: 10px;
-  background: rgba(102, 126, 234, 0.1);
-  border-radius: 8px;
   font-size: 14px;
 }
 
-.exceeded-prompts-error-msg {
-  margin: 10px 0;
-  padding: 12px;
-  background: rgba(220, 38, 38, 0.1);
-  border: 2px solid rgba(220, 38, 38, 0.3);
-  border-radius: 8px;
-  color: #dc2626;
-  font-weight: 600;
+.cost-item span {
+  font-weight: 700;
+  color: #ACECA1;
+  font-size: 16px;
 }
