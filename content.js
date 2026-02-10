@@ -23,7 +23,7 @@ let timerInterval = null;
 
 // Resistance calculation: simple percentage based on tokens
 // 100 tokens = 10%, 500 tokens = 50%, 1000 tokens = 100%
-const TOKENS_FOR_MAX_RESISTANCE = 80;
+const TOKENS_FOR_MAX_RESISTANCE = 90;
 
 // Decay rate: lose 1% every 15 seconds (but check more frequently)
 const DECAY_RATE = 2; // % per interval
