@@ -1,4 +1,4 @@
-console.log("🔥 ChatGPT Energy Tracker Extension loaded (GPT-5 optimized) - VERSION 2.1");
+console.log("🔥 ChatGPT Energy Tracker Extension loaded (GPT-5 optimized) - VERSION 2.2");
 
 // Session tracking state
 let sessionActive = false;
@@ -21,6 +21,9 @@ let lastDecayTime = null;
 // Timer tracking
 let timerInterval = null;
 
+// Arduino enabled state
+let arduinoEnabled = true;
+
 // Resistance calculation: simple percentage based on tokens
 // 100 tokens = 10%, 500 tokens = 50%, 1000 tokens = 100%
 const TOKENS_FOR_MAX_RESISTANCE = 90;
@@ -37,7 +40,7 @@ const IMAGE_GENERATION_MULTIPLIER = 2.907;
 const ENERGY_PER_TOKEN = 0.0004; // Wh per token (estimated for GPT-5, higher than GPT-4)
 const SMARTPHONE_CHARGE = 15; // Wh
 const GOOGLE_SEARCH = 0.0003; // Wh
-const LED_HOUR = 10; // Wh
+const LED_MINUTE = 0.1667; // Wh
 
 // GPT-5 pricing mapping (credits per 1K tokens)
 const enginesCreditsMapping = {
@@ -57,6 +60,28 @@ let capturedPromptText = "";
 
 // Track current query index for image detection
 let currentQueryIndex = -1;
+
+// Load Arduino enabled state from storage
+if (typeof chrome !== 'undefined' && chrome.storage) {
+  chrome.storage.local.get(['arduinoEnabled'], (result) => {
+    arduinoEnabled = result.arduinoEnabled !== undefined ? result.arduinoEnabled : true;
+    console.log('Content script: Arduino enabled state loaded:', arduinoEnabled);
+  });
+  
+  // Listen for changes to Arduino enabled state
+  chrome.storage.onChanged.addListener((changes, namespace) => {
+    if (namespace === 'local' && changes.arduinoEnabled) {
+      arduinoEnabled = changes.arduinoEnabled.newValue;
+      console.log('Content script: Arduino enabled state updated:', arduinoEnabled);
+      
+      // If Arduino was disabled, send stop command
+      if (!arduinoEnabled) {
+        console.log('🛑 Arduino disabled - sending stop command');
+        sendResistanceToArduino(0, 0, true); // Force send stop
+      }
+    }
+  });
+}
 
 function getPromptText() {
   const textarea = document.querySelector("textarea");
@@ -91,7 +116,7 @@ function calculateEnergyMetrics(tokens) {
     energyWh,
     smartphoneCharges: (energyWh / SMARTPHONE_CHARGE).toFixed(4),
     googleSearches: Math.round(energyWh / GOOGLE_SEARCH),
-    ledHours: (energyWh / LED_HOUR).toFixed(4)
+    ledMinutes: (energyWh / LED_MINUTE).toFixed(2)
   };
 }
 
@@ -178,30 +203,26 @@ function createOverlay() {
         </div>
         <div class="resistance-status" id="resistance-status">No resistance</div>
       </div>
-      <div class="energy-stat">
-        <span class="stat-value" id="tokens-value">0</span>
-        <span class="stat-label">tokens this query</span>
-      </div>
-      <div class="energy-divider"></div>
-      <div class="energy-stat cumulative">
-        <span class="stat-value" id="cumulative-tokens">0</span>
-        <span class="stat-label">total tokens</span>
-      </div>
       <div class="equivalents">
         <div class="equiv-item">
-          📱 <span id="smartphone-equiv">0</span> smartphone charges
+          📱 <span id="smartphone-equiv">0</span> iPhone charges
         </div>
         <div class="equiv-item">
           🔍 <span id="search-equiv">0</span> Google searches
         </div>
         <div class="equiv-item">
-          💡 <span id="led-equiv">0</span> hours of LED light
+          💡 <span id="led-equiv">0</span> minutes of LED light
+        </div>
+        <div class="equiv-item">
+          💰 Energy cost: $<span id="cost-value">0.00</span>
         </div>
       </div>
-      <div class="cost-estimate">
-        <div class="cost-item">
-          💰 Estimated cost: $<span id="cost-value">0.00</span>
-        </div>
+      <div class="energy-stat">
+        <span class="stat-label"><span class="stat-value" id="tokens-value">0</span> tokens this query</span>
+      </div>
+      <div class="energy-divider"></div>
+      <div class="energy-stat cumulative">
+        <span class="stat-label"><span class="stat-value" id="cumulative-tokens">0</span> total tokens</span>
       </div>
     </div>
   `;
@@ -300,7 +321,12 @@ function startResistanceDecay() {
   }, DECAY_UPDATE_INTERVAL);
 }
 
-function sendResistanceToArduino(resistance, tokens) {
+function sendResistanceToArduino(resistance, tokens, forceStop = false) {
+  // Check if Arduino is enabled (unless it's a force stop command)
+  if (!arduinoEnabled && !forceStop) {
+    return; // Don't send if Arduino is disabled
+  }
+  
   if (typeof chrome !== 'undefined' && chrome.runtime) {
     chrome.runtime.sendMessage({
       type: 'ARDUINO_UPDATE',
@@ -338,7 +364,7 @@ function updateOverlay(metrics, cumulative = false, engineName = 'gpt-5') {
     const cumulativeMetrics = calculateEnergyMetrics(sessionData.totalTokens);
     document.getElementById('smartphone-equiv').textContent = cumulativeMetrics.smartphoneCharges;
     document.getElementById('search-equiv').textContent = cumulativeMetrics.googleSearches.toLocaleString();
-    document.getElementById('led-equiv').textContent = cumulativeMetrics.ledHours;
+    document.getElementById('led-equiv').textContent = cumulativeMetrics.ledMinutes;
     
     const tokenCosts = (enginesCreditsMapping[engineName] || enginesCreditsMapping['gpt-5']) / 1000;
     const totalCost = (sessionData.totalTokens * tokenCosts).toFixed(3);
@@ -834,7 +860,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime) {
       
       resistanceLevel = 0;
       updateResistanceBar();
-      sendResistanceToArduino(0, 0);
+      sendResistanceToArduino(0, 0, true); // Force stop even if Arduino is disabled
       console.log("🛑 Motor stopped - session ended");
       
       const completionTime = Date.now() - sessionData.startTime;

@@ -2,16 +2,62 @@ let sessionActive = false;
 let updateInterval;
 let timerInterval;
 let sessionStartTime = null;
+let arduinoEnabled = true; // Track Arduino state
 
 // DOM elements
 const startBtn = document.getElementById('startBtn');
 const endBtn = document.getElementById('endBtn');
 const status = document.getElementById('status');
+const statusContainer = document.getElementById('statusContainer');
 const totalQueries = document.getElementById('totalQueries');
 const totalTokens = document.getElementById('totalTokens');
 const timeToFirst = document.getElementById('timeToFirst');
 const duration = document.getElementById('duration');
 const exportDataBtn = document.getElementById('exportData');
+const arduinoToggle = document.getElementById('arduinoToggle');
+
+// Load Arduino toggle state from storage
+chrome.storage.local.get(['arduinoEnabled'], (result) => {
+  arduinoEnabled = result.arduinoEnabled !== undefined ? result.arduinoEnabled : true;
+  arduinoToggle.checked = arduinoEnabled;
+  console.log('Arduino toggle loaded:', arduinoEnabled);
+});
+
+// Arduino toggle event listener
+arduinoToggle.addEventListener('change', (e) => {
+  arduinoEnabled = e.target.checked;
+  
+  // Save state to storage
+  chrome.storage.local.set({ arduinoEnabled }, () => {
+    console.log('Arduino toggle state saved:', arduinoEnabled);
+  });
+  
+  // Send updated state to content script
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (tabs[0]) {
+      chrome.tabs.sendMessage(tabs[0].id, { 
+        type: 'SET_ARDUINO_ENABLED', 
+        enabled: arduinoEnabled 
+      }, (response) => {
+        if (chrome.runtime.lastError) {
+          console.log('Could not send to content script:', chrome.runtime.lastError.message);
+        } else {
+          console.log('Arduino state sent to content script:', arduinoEnabled);
+        }
+      });
+    }
+  });
+  
+  // If turning off, send stop signal to Arduino immediately
+  if (!arduinoEnabled) {
+    chrome.runtime.sendMessage({
+      type: 'ARDUINO_UPDATE',
+      resistance: 0,
+      tokens: 0,
+      enabled: false
+    });
+  }
+});
 
 // Resistance calculation
 const TOKENS_FOR_MAX_RESISTANCE = 1000;
@@ -74,14 +120,14 @@ function updateUI() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
     if (!tabs[0]) {
       status.textContent = 'No active tab found';
-      status.classList.remove('active');
+      statusContainer.classList.remove('active');
       return;
     }
 
     const url = tabs[0].url;
     if (!url || (!url.includes('chatgpt.com') && !url.includes('chat.openai.com'))) {
       status.textContent = 'Please navigate to chatgpt.com';
-      status.classList.remove('active');
+      statusContainer.classList.remove('active');
       return;
     }
     
@@ -89,7 +135,7 @@ function updateUI() {
       if (chrome.runtime.lastError) {
         console.log('Content script not ready:', chrome.runtime.lastError.message);
         status.textContent = 'Refresh ChatGPT page to activate';
-        status.classList.remove('active');
+        statusContainer.classList.remove('active');
         return;
       }
 
@@ -108,10 +154,10 @@ function updateUI() {
       // Update status
       if (sessionActive) {
         status.textContent = '🟢 Session Active';
-        status.classList.add('active');
+        statusContainer.classList.add('active');
       } else {
         status.textContent = 'Session Inactive';
-        status.classList.remove('active');
+        statusContainer.classList.remove('active');
       }
       
       // Update metrics if data exists
@@ -158,7 +204,10 @@ startBtn.addEventListener('click', () => {
     
     console.log('Sending START_SESSION to tab:', tabs[0].id);
     
-    chrome.tabs.sendMessage(tabs[0].id, { type: 'START_SESSION' }, (response) => {
+    chrome.tabs.sendMessage(tabs[0].id, { 
+      type: 'START_SESSION',
+      arduinoEnabled: arduinoEnabled 
+    }, (response) => {
       if (chrome.runtime.lastError) {
         console.error('Error:', chrome.runtime.lastError.message);
         alert('Error starting session. Please refresh the ChatGPT page and try again.');
@@ -174,7 +223,7 @@ startBtn.addEventListener('click', () => {
         startBtn.disabled = true;
         endBtn.disabled = false;
         status.textContent = '🟢 Session Active';
-        status.classList.add('active');
+        statusContainer.classList.add('active');
         
         // Start periodic updates
         if (updateInterval) clearInterval(updateInterval);
@@ -214,7 +263,7 @@ endBtn.addEventListener('click', () => {
         startBtn.disabled = false;
         endBtn.disabled = true;
         status.textContent = 'Session Inactive';
-        status.classList.remove('active');
+        statusContainer.classList.remove('active');
         
         stopTimer();
         updateUI();
@@ -252,6 +301,23 @@ exportDataBtn.addEventListener('click', () => {
   });
 });
 
+// Helper function to escape CSV fields
+function escapeCSV(field) {
+  if (field === null || field === undefined) {
+    return '';
+  }
+  
+  // Convert to string
+  const str = String(field);
+  
+  // If field contains comma, quote, or newline, wrap in quotes and escape quotes
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  
+  return str;
+}
+
 function exportData(data) {
   if (!data || !data.queries) {
     alert('No data to export');
@@ -272,14 +338,20 @@ function exportData(data) {
   csv += `Completion Time (ms),${completionTime}\n`;
   csv += `Completion Time (formatted),${formatDuration(completionTime)}\n\n`;
   
-  // Query details
-  csv += 'Query #,Timestamp,Prompt Length,Prompt Tokens,Response Tokens,Total Tokens,Depth,Resistance Level (%),Image Generated,Image Scaling Applied,Original Tokens,Time from Start (ms)\n';
+  // Query details header
+  csv += 'Query #,Timestamp,Prompt Text,Prompt Length,Prompt Tokens,Response Tokens,Total Tokens,Depth,Resistance Level (%),Image Generated,Image Scaling Applied,Original Tokens,Time from Start (ms)\n';
+  
+  // Query details rows
   data.queries.forEach((query, idx) => {
     const resistanceLevel = query.resistanceLevel !== undefined ? query.resistanceLevel : 'N/A';
     const imageGenerated = query.imageGenerated ? 'Yes' : 'No';
     const imageScalingApplied = query.imageScalingApplied ? 'Yes' : 'No';
     const originalTokens = query.originalPromptTokens !== undefined ? query.originalPromptTokens : query.promptTokens;
-    csv += `${idx + 1},${new Date(query.timestamp).toISOString()},${query.promptLength},${query.promptTokens},${query.responseTokens},${query.tokens},${query.depth},${resistanceLevel},${imageGenerated},${imageScalingApplied},${originalTokens},${query.timestamp - data.startTime}\n`;
+    
+    // Escape the prompt text for CSV
+    const promptText = escapeCSV(query.promptText || '');
+    
+    csv += `${idx + 1},${new Date(query.timestamp).toISOString()},${promptText},${query.promptLength},${query.promptTokens},${query.responseTokens},${query.tokens},${query.depth},${resistanceLevel},${imageGenerated},${imageScalingApplied},${originalTokens},${query.timestamp - data.startTime}\n`;
   });
   
   // Download

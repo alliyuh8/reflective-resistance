@@ -127,7 +127,7 @@
 }
 
 .resistance-label {
-  font-size: 14px;
+  font-size: 18px;
   font-weight: 600;
   color: #ffffff;
 }
@@ -176,7 +176,7 @@
 
 .resistance-status {
   text-align: center;
-  font-size: 12px;
+  font-size:18px;
   opacity: 0.9;
   color: #ACECA1;
   font-weight: 600;
@@ -185,10 +185,10 @@
 /* Energy Stats */
 .energy-stat {
   text-align: center;
-  padding: 12px;
+  padding: 8px;
   background: rgba(36, 49, 25, 0.3);
   border-radius: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
   border: 1px solid rgba(172, 236, 161, 0.2);
 }
 
@@ -198,15 +198,15 @@
 }
 
 .stat-value {
-  display: block;
-  font-size: 28px;
+  display: inline-block;
+  font-size: 20px;
   font-weight: 700;
   color: #ffffff;
   margin-bottom: 4px;
 }
 
 .stat-label {
-  font-size: 20px;
+  font-size: 15px;
   opacity: 0.8;
   color: #ffffff;
 }
@@ -215,7 +215,7 @@
 .energy-divider {
   height: 1px;
   background: rgba(172, 236, 161, 0.3);
-  margin: 16px 0;
+  margin: 8px 0;
 }
 
 /* Equivalents */
@@ -232,7 +232,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 6px 8px;
-  font-size: 13px;
+  font-size: 18px;
   border-bottom: 1px solid rgba(172, 236, 161, 0.1);
 }
 
@@ -255,11 +255,11 @@
 }
 
 .cost-item {
-  font-size: 14px;
+  font-size: 20px;
 }
 
 .cost-item span {
   font-weight: 700;
   color: #ACECA1;
-  font-size: 16px;
+  font-size: 20px;
 }
