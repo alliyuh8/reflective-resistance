@@ -29,7 +29,7 @@ let arduinoEnabled = true;
 const TOKENS_FOR_MAX_RESISTANCE = 90;
 
 // Decay rate: lose 1% every 15 seconds (but check more frequently)
-const DECAY_RATE = 2; // % per interval
+const DECAY_RATE = 1.25; // % per interval
 const DECAY_INTERVAL = 5000; // 5 seconds in ms
 const DECAY_UPDATE_INTERVAL = 1000; // Send updates every 1 second
 
@@ -37,9 +37,9 @@ const DECAY_UPDATE_INTERVAL = 1000; // Send updates every 1 second
 const IMAGE_GENERATION_MULTIPLIER = 2.907;
 
 // GPT-5 Energy conversion constants (updated estimates)
-const ENERGY_PER_TOKEN = 0.0004; // Wh per token (estimated for GPT-5, higher than GPT-4)
+const ENERGY_PER_TOKEN = 0.004; // Wh per token (estimated for GPT-5, higher than GPT-4)
 const SMARTPHONE_CHARGE = 15; // Wh
-const GOOGLE_SEARCH = 0.0003; // Wh
+const GOOGLE_SEARCH = 0.3; // Wh
 const LED_MINUTE = 0.1667; // Wh
 
 // GPT-5 pricing mapping (credits per 1K tokens)
