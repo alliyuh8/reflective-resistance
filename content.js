@@ -34,7 +34,7 @@ const DECAY_INTERVAL = 5000; // 5 seconds in ms
 const DECAY_UPDATE_INTERVAL = 1000; // Send updates every 1 second
 
 // Image generation scaling factor
-const IMAGE_GENERATION_MULTIPLIER = 2.907;
+const IMAGE_GENERATION_MULTIPLIER = 60;
 
 // GPT-5 Energy conversion constants (updated estimates)
 const ENERGY_PER_TOKEN = 0.004; // Wh per token (estimated for GPT-5, higher than GPT-4)
